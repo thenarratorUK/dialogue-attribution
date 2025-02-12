@@ -57,6 +57,7 @@ def match_normalize(text):
     return text.replace("’", "'").replace("‘", "'")
 
 def normalize_speaker_name(name):
+    # We lowercase for matching.
     return name.replace(".", "").lower().strip()
 
 def smart_title(name):
@@ -64,7 +65,8 @@ def smart_title(name):
     Returns a normalized title for a speaker name.
     Each word is capitalized (first letter uppercase, rest lowercase),
     except that words in the exceptions (ps, pc, ds, di, dci) are forced to uppercase.
-    Also, any letter immediately following an apostrophe is forced to lowercase.
+    Additionally, if the name ends with a parenthesized letter (e.g., "(m)" or "(f)"),
+    that letter is forced to uppercase.
     """
     words = name.split()
     if not words:
@@ -77,7 +79,8 @@ def smart_title(name):
         else:
             new_words.append(w.capitalize())
     result = " ".join(new_words)
-    result = re.sub(r"\'([A-Z])", lambda m: "'" + m.group(1).lower(), result)
+    # Now fix any trailing parenthesized single letter to be uppercase.
+    result = re.sub(r"\(([mf])\)$", lambda m: "(" + m.group(1).upper() + ")", result, flags=re.IGNORECASE)
     return result
 
 def write_file_atomic(filepath, lines):
@@ -102,11 +105,9 @@ def auto_save():
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
     with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
-    # Also save speaker_colors JSON.
     if "speaker_colors" in st.session_state and st.session_state.speaker_colors is not None:
         with open(SAVED_COLORS_FILE, "w", encoding="utf-8") as f:
             json.dump(st.session_state.speaker_colors, f, indent=4)
-    # And save the updated quotes TXT file.
     if "quotes_lines" in st.session_state and st.session_state.get("book_name"):
         quotes_filename = f"{st.session_state.book_name}-quotes.txt"
         with open(quotes_filename, "w", encoding="utf-8") as f:
@@ -119,7 +120,6 @@ def auto_load():
             data = json.load(f)
         for key, value in data.items():
             st.session_state[key] = value
-        # If docx_bytes was saved, decode it and recreate a temporary file.
         if "docx_bytes" in st.session_state:
             docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
             st.session_state.docx_bytes = docx_bytes
@@ -130,7 +130,6 @@ def auto_load():
 # ---------------------------
 # Alternative Extraction Functions
 # ---------------------------
-# These functions run if only a DOCX is uploaded.
 ATTACH_NO_SPACE = {"'", "’", "‘", '"', "“", "”", ",", ".", ";", ":", "?", "!"}
 DASHES = {"-", "–", "—"}
 
@@ -205,7 +204,6 @@ def extract_dialogue_from_docx(book_name, docx_path):
 
 # ---------------------------
 # DOCX-to-HTML & Marking Functions
-# (Reused from before)
 # ---------------------------
 def prepend_marker_to_paragraph(paragraph, marker_text):
     p = paragraph._p
@@ -243,7 +241,6 @@ def convert_length_to_px(length):
 
 # ---------------------------
 # Dialogue Highlighting Functions
-# (Reused from before)
 # ---------------------------
 def highlight_across_nodes(parent, quote, highlight_style, soup):
     full_text = parent.get_text()
@@ -555,12 +552,12 @@ if st.session_state.step == 1:
     st.write("Upload your DOCX and quotes text files. Optionally, upload an existing speaker_colors.json file.")
     st.write("Alternatively, upload **just a DOCX** to create a quotes text file.")
     
-    # DOCX-only branch: if a DOCX was already uploaded.
+    # DOCX-only branch: if a DOCX has already been uploaded.
     if "docx_bytes" in st.session_state:
         st.success("DOCX already uploaded and processed.")
-        # Check if we are in the DOCX-only branch (flag docx_only is True).
+        # We check for a flag 'docx_only' set during file upload.
         if st.session_state.get("docx_only", False):
-            # If quotes have been extracted, show download and action buttons.
+            # If quotes have been extracted, show download and explicit action buttons.
             if st.session_state.get("quotes_lines") is not None:
                 quotes_txt = "\n".join(st.session_state.quotes_lines)
                 st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
@@ -568,14 +565,13 @@ if st.session_state.step == 1:
                 if st.button("Restart", key="restart_docx"):
                     restart_app()
                 if st.button("Continue", key="continue_docx"):
-                    st.session_state.docx_only = False  # clear the flag
+                    st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
                     st.rerun()
             else:
-                # If quotes haven't been extracted, extract them.
                 dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
                 st.session_state.quotes_lines = dialogue_list
                 st.session_state.docx_only = True
@@ -593,10 +589,9 @@ if st.session_state.step == 1:
                     auto_save()
                     st.rerun()
         else:
-            # Otherwise, if docx_only flag is False, we assume a quotes file was uploaded.
-            pass  # (The rest of the branch will not be reached because step would have been set already.)
+            # If the docx_only flag is False, then we assume a quotes file was uploaded.
+            pass
     else:
-        # File upload widgets.
         docx_file = st.file_uploader("Upload DOCX File", type=["docx"])
         quotes_file = st.file_uploader("Upload Quotes TXT File (optional)", type=["txt"])
         speaker_colors_file = st.file_uploader("Upload Speaker Colors JSON (optional)", type=["json"])
@@ -610,13 +605,11 @@ if st.session_state.step == 1:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
                     tmp_docx.write(st.session_state.docx_bytes)
                     st.session_state.docx_path = tmp_docx.name
-                # If a quotes file is provided, use it and clear the docx_only flag.
                 if quotes_file is not None:
                     quotes_text = quotes_file.read().decode("utf-8")
                     st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
                     st.session_state.docx_only = False
                 else:
-                    # Otherwise, signal the DOCX-only branch by leaving quotes_lines as None and setting flag.
                     st.session_state.quotes_lines = None
                     st.session_state.docx_only = True
                 if speaker_colors_file is not None:
@@ -625,7 +618,7 @@ if st.session_state.step == 1:
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
                 st.session_state.console_log = []
-                # If we're in the DOCX-only branch, remain on step 1 so the user can download and choose.
+                # If we are in DOCX-only branch, remain on step 1 so user can download & choose.
                 if st.session_state.docx_only:
                     st.session_state.step = 1
                 else:
@@ -636,7 +629,7 @@ if st.session_state.step == 1:
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
     st.title("Step 2: Process Unknown Speakers")
-    st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip'/'exit').")
+    st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip', 'exit', or 'undo').")
     
     def get_next_unknown_line():
         quotes = st.session_state.get("quotes_lines")
@@ -701,7 +694,22 @@ elif st.session_state.step == 2:
             elif new_speaker.lower() == "skip":
                 st.session_state.console_log.append(f"Skipped line {index+1}.")
                 st.session_state.unknown_index = index + 1
+            elif new_speaker.lower() == "undo":
+                if "last_update" in st.session_state:
+                    last_index = st.session_state.last_update[0]
+                    pattern = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]+)(:.*)$")
+                    m = pattern.match(st.session_state.quotes_lines[last_index])
+                    if m:
+                        prefix_u, _, remainder_u = m.groups()
+                        st.session_state.quotes_lines[last_index] = prefix_u + "Unknown" + remainder_u
+                        st.session_state.unknown_index = last_index
+                        st.session_state.console_log.append(f"Reverted line {last_index+1} to Unknown.")
+                    del st.session_state.last_update
+                else:
+                    st.session_state.console_log.append("Nothing to undo.")
             else:
+                # Before updating, store the current value for potential undo.
+                st.session_state.last_update = (index, st.session_state.quotes_lines[index])
                 updated_speaker = smart_title(new_speaker)
                 new_line = prefix + updated_speaker + remainder
                 if not new_line.endswith("\n"):
@@ -711,8 +719,8 @@ elif st.session_state.step == 2:
                 st.session_state.unknown_index = index + 1
             st.session_state.new_speaker_input = ""
             auto_save()
-        
-        st.text_input("Enter speaker name (or 'skip'/'exit'):", key="new_speaker_input", on_change=process_unknown_input)
+            
+        st.text_input("Enter speaker name (or 'skip'/'exit'/'undo'):", key="new_speaker_input", on_change=process_unknown_input)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
 # ========= STEP 3: Speaker Color Assignment =========
@@ -807,7 +815,7 @@ elif st.session_state.step == 4:
                        file_name=f"{st.session_state.book_name}.html", mime="text/html")
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
-                       file_name=f"{st.session_state.book_name}-speaker_colors.json", mime="application/json")
+                       file_name="speaker_colors.json", mime="application/json")
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.book_name}-quotes.txt", mime="text/plain")
