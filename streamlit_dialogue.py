@@ -452,6 +452,7 @@ if st.session_state.step == 1:
         st.info("Saved progress found. Click the button below to load your progress.")
         if st.button("Load Progress"):
             auto_load()
+            st.write("Loaded progress:", st.session_state)
             st.success("Progress loaded.")
             st.rerun()
     
