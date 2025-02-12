@@ -501,7 +501,6 @@ def get_canonical_speakers(quotes_file):
             seen.add(norm)
             canonical_speakers.append(s)
     canonical_map = {normalize_speaker_name(s): s for s in canonical_speakers}
-    # Removed duplicate display of canonical speakers.
     return canonical_speakers, canonical_map
 
 def load_quotes(quotes_file, canonical_map):
@@ -651,7 +650,7 @@ elif st.session_state.step == 2:
         dialogue = remainder.lstrip(": ").rstrip("\n")
         st.write(f"**Line {index+1}:**")
         st.write("**Dialogue:**", dialogue)
-        # Display context:
+        # Display context.
         def get_context_for_dialogue(dialogue):
             try:
                 doc = docx.Document(st.session_state.docx_path)
@@ -681,7 +680,7 @@ elif st.session_state.step == 2:
                 st.write("*Next Paragraph:*", context["next"])
         else:
             st.write("No context found in DOCX for this quote.")
-        # Now duplicate the dialogue line at the bottom (after context)
+        # Duplicate dialogue line at the bottom (after context).
         st.markdown(f"**Dialogue:** {dialogue}")
         
         def process_unknown_input():
@@ -809,8 +808,9 @@ elif st.session_state.step == 4:
     st.download_button("Download HTML File", html_bytes,
                        file_name=f"{st.session_state.book_name}.html", mime="text/html")
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4).encode("utf-8")
+    # The speaker colors JSON now always downloads as "speaker_colors.json"
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
-                       file_name=f"{st.session_state.book_name}-speaker_colors.json", mime="application/json")
+                       file_name="speaker_colors.json", mime="application/json")
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.book_name}-quotes.txt", mime="text/plain")
