@@ -57,7 +57,7 @@ def match_normalize(text):
     return text.replace("’", "'").replace("‘", "'")
 
 def normalize_speaker_name(name):
-    # Matching is case-insensitive.
+    # For matching, we lowercase the name.
     return name.replace(".", "").lower().strip()
 
 def smart_title(name):
@@ -79,7 +79,6 @@ def smart_title(name):
         else:
             new_words.append(w.capitalize())
     result = " ".join(new_words)
-    # Force a single letter in parentheses at the end to uppercase.
     result = re.sub(r"\(([mf])\)$", lambda m: "(" + m.group(1).upper() + ")", result, flags=re.IGNORECASE)
     return result
 
@@ -502,7 +501,7 @@ def get_canonical_speakers(quotes_file):
             seen.add(norm)
             canonical_speakers.append(s)
     canonical_map = {normalize_speaker_name(s): s for s in canonical_speakers}
-    # Removed duplicate display here.
+    # Removed duplicate display of canonical speakers.
     return canonical_speakers, canonical_map
 
 def load_quotes(quotes_file, canonical_map):
@@ -534,7 +533,7 @@ def save_speaker_colors(speaker_colors):
         json.dump(speaker_colors, f, indent=4)
 
 # ---------------------------
-# Restart Helper Function (only for the DOCX-only branch in Step 1)
+# Restart Helper Function (for DOCX-only branch of Step 1)
 # ---------------------------
 def restart_app():
     st.session_state.clear()
@@ -652,9 +651,7 @@ elif st.session_state.step == 2:
         dialogue = remainder.lstrip(": ").rstrip("\n")
         st.write(f"**Line {index+1}:**")
         st.write("**Dialogue:**", dialogue)
-        # Duplicate matching line at the bottom:
-        st.markdown(f"**Matched Line:** {dialogue}")
-        # Bold the matched text in the current paragraph.
+        # Display context:
         def get_context_for_dialogue(dialogue):
             try:
                 doc = docx.Document(st.session_state.docx_path)
@@ -684,6 +681,8 @@ elif st.session_state.step == 2:
                 st.write("*Next Paragraph:*", context["next"])
         else:
             st.write("No context found in DOCX for this quote.")
+        # Now duplicate the dialogue line at the bottom (after context)
+        st.markdown(f"**Dialogue:** {dialogue}")
         
         def process_unknown_input():
             new_speaker = st.session_state.new_speaker_input.strip()
@@ -724,17 +723,15 @@ elif st.session_state.step == 2:
 # ========= STEP 3: Speaker Color Assignment =========
 elif st.session_state.step == 3:
     st.title("Step 3: Speaker Color Assignment")
-    st.write("The app extracts canonical speakers from the quotes file.")
+    st.write("Select a highlight color for each canonical speaker (for 'Unknown', it is fixed to 'none').")
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
-    # Removed duplicate printing of canonical speakers.
     existing_colors = st.session_state.existing_speaker_colors if "existing_speaker_colors" in st.session_state else load_existing_colors()
-    st.write("Select a highlight color for each speaker (for 'Unknown', it is fixed to 'none').")
-    speaker_colors = {}
     with st.form("color_assignment_form"):
+        speaker_colors = {}
         for sp in canonical_speakers:
             if sp.lower() == "unknown":
                 speaker_colors[sp] = "none"
