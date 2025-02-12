@@ -57,7 +57,7 @@ def match_normalize(text):
     return text.replace("’", "'").replace("‘", "'")
 
 def normalize_speaker_name(name):
-    # We lowercase for matching.
+    # Matching is case-insensitive.
     return name.replace(".", "").lower().strip()
 
 def smart_title(name):
@@ -79,7 +79,7 @@ def smart_title(name):
         else:
             new_words.append(w.capitalize())
     result = " ".join(new_words)
-    # Now fix any trailing parenthesized single letter to be uppercase.
+    # Force a single letter in parentheses at the end to uppercase.
     result = re.sub(r"\(([mf])\)$", lambda m: "(" + m.group(1).upper() + ")", result, flags=re.IGNORECASE)
     return result
 
@@ -502,7 +502,7 @@ def get_canonical_speakers(quotes_file):
             seen.add(norm)
             canonical_speakers.append(s)
     canonical_map = {normalize_speaker_name(s): s for s in canonical_speakers}
-    st.write("Canonical speakers (after correction):", canonical_speakers)
+    # Removed duplicate display here.
     return canonical_speakers, canonical_map
 
 def load_quotes(quotes_file, canonical_map):
@@ -555,9 +555,7 @@ if st.session_state.step == 1:
     # DOCX-only branch: if a DOCX has already been uploaded.
     if "docx_bytes" in st.session_state:
         st.success("DOCX already uploaded and processed.")
-        # We check for a flag 'docx_only' set during file upload.
         if st.session_state.get("docx_only", False):
-            # If quotes have been extracted, show download and explicit action buttons.
             if st.session_state.get("quotes_lines") is not None:
                 quotes_txt = "\n".join(st.session_state.quotes_lines)
                 st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
@@ -589,7 +587,6 @@ if st.session_state.step == 1:
                     auto_save()
                     st.rerun()
         else:
-            # If the docx_only flag is False, then we assume a quotes file was uploaded.
             pass
     else:
         docx_file = st.file_uploader("Upload DOCX File", type=["docx"])
@@ -618,7 +615,6 @@ if st.session_state.step == 1:
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
                 st.session_state.console_log = []
-                # If we are in DOCX-only branch, remain on step 1 so user can download & choose.
                 if st.session_state.docx_only:
                     st.session_state.step = 1
                 else:
@@ -656,7 +652,9 @@ elif st.session_state.step == 2:
         dialogue = remainder.lstrip(": ").rstrip("\n")
         st.write(f"**Line {index+1}:**")
         st.write("**Dialogue:**", dialogue)
-        
+        # Duplicate matching line at the bottom:
+        st.markdown(f"**Matched Line:** {dialogue}")
+        # Bold the matched text in the current paragraph.
         def get_context_for_dialogue(dialogue):
             try:
                 doc = docx.Document(st.session_state.docx_path)
@@ -664,12 +662,14 @@ elif st.session_state.step == 2:
                 return None
             normalized_dialogue = normalize_text(dialogue).lower()
             for idx, para in enumerate(doc.paragraphs):
-                para_text = normalize_text(para.text).lower()
-                if normalized_dialogue in para_text:
+                para_text = normalize_text(para.text)
+                if normalized_dialogue in para_text.lower():
                     context = {}
                     if idx > 0:
                         context['previous'] = doc.paragraphs[idx-1].text
-                    context['current'] = doc.paragraphs[idx].text
+                    pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
+                    highlighted = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para.text)
+                    context['current'] = highlighted
                     if idx+1 < len(doc.paragraphs):
                         context['next'] = doc.paragraphs[idx+1].text
                     return context
@@ -677,10 +677,9 @@ elif st.session_state.step == 2:
 
         context = get_context_for_dialogue(dialogue)
         if context:
-            st.write("**Context:**")
             if "previous" in context:
                 st.write("*Previous Paragraph:*", context["previous"])
-            st.write("*Current Paragraph:*", context["current"])
+            st.markdown("*Current Paragraph:* " + context["current"], unsafe_allow_html=True)
             if "next" in context:
                 st.write("*Next Paragraph:*", context["next"])
         else:
@@ -689,10 +688,10 @@ elif st.session_state.step == 2:
         def process_unknown_input():
             new_speaker = st.session_state.new_speaker_input.strip()
             if new_speaker.lower() == "exit":
-                st.session_state.console_log.append("Exiting unknown speaker processing.")
+                st.session_state.console_log.insert(0, "Exiting unknown speaker processing.")
                 st.session_state.step = 3
             elif new_speaker.lower() == "skip":
-                st.session_state.console_log.append(f"Skipped line {index+1}.")
+                st.session_state.console_log.insert(0, f"Skipped line {index+1}.")
                 st.session_state.unknown_index = index + 1
             elif new_speaker.lower() == "undo":
                 if "last_update" in st.session_state:
@@ -703,23 +702,22 @@ elif st.session_state.step == 2:
                         prefix_u, _, remainder_u = m.groups()
                         st.session_state.quotes_lines[last_index] = prefix_u + "Unknown" + remainder_u
                         st.session_state.unknown_index = last_index
-                        st.session_state.console_log.append(f"Reverted line {last_index+1} to Unknown.")
+                        st.session_state.console_log.insert(0, f"Reverted line {last_index+1} to Unknown.")
                     del st.session_state.last_update
                 else:
-                    st.session_state.console_log.append("Nothing to undo.")
+                    st.session_state.console_log.insert(0, "Nothing to undo.")
             else:
-                # Before updating, store the current value for potential undo.
                 st.session_state.last_update = (index, st.session_state.quotes_lines[index])
                 updated_speaker = smart_title(new_speaker)
                 new_line = prefix + updated_speaker + remainder
                 if not new_line.endswith("\n"):
                     new_line += "\n"
                 st.session_state.quotes_lines[index] = new_line
-                st.session_state.console_log.append(f"Updated line {index+1} with speaker: {updated_speaker}")
+                st.session_state.console_log.insert(0, f"Updated line {index+1} with speaker: {updated_speaker}")
                 st.session_state.unknown_index = index + 1
             st.session_state.new_speaker_input = ""
             auto_save()
-            
+        
         st.text_input("Enter speaker name (or 'skip'/'exit'/'undo'):", key="new_speaker_input", on_change=process_unknown_input)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
@@ -732,7 +730,7 @@ elif st.session_state.step == 3:
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
-    st.write("Canonical Speakers:", canonical_speakers)
+    # Removed duplicate printing of canonical speakers.
     existing_colors = st.session_state.existing_speaker_colors if "existing_speaker_colors" in st.session_state else load_existing_colors()
     st.write("Select a highlight color for each speaker (for 'Unknown', it is fixed to 'none').")
     speaker_colors = {}
@@ -815,7 +813,7 @@ elif st.session_state.step == 4:
                        file_name=f"{st.session_state.book_name}.html", mime="text/html")
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
-                       file_name="speaker_colors.json", mime="application/json")
+                       file_name=f"{st.session_state.book_name}-speaker_colors.json", mime="application/json")
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.book_name}-quotes.txt", mime="text/plain")
