@@ -42,7 +42,7 @@ COLOR_PALETTE = {
     "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)")
 }
 SAVED_COLORS_FILE = "speaker_colors.json"
-PROGRESS_FILE = "progress.json"  # file to store auto-saved progress
+PROGRESS_FILE = "progress.json"  # File to store auto-saved progress
 
 def normalize_text(text):
     text = text.replace("\u00A0", " ")
@@ -90,6 +90,7 @@ def write_file_atomic(filepath, lines):
 # ---------------------------
 def auto_save():
     data = {
+        "step": st.session_state.get("step", 1),  # Save the current step
         "quotes_lines": st.session_state.get("quotes_lines"),
         "speaker_colors": st.session_state.get("speaker_colors"),
         "unknown_index": st.session_state.get("unknown_index", 0),
@@ -447,7 +448,7 @@ if 'step' not in st.session_state:
 if st.session_state.step == 1:
     st.title("DOCX to HTML Converter with Dialogue Highlighting")
     
-    # Check for saved progress and offer to load it.
+    # Check for saved progress.
     if os.path.exists(PROGRESS_FILE):
         st.info("Saved progress found. Click the button below to load your progress.")
         if st.button("Load Progress"):
@@ -478,7 +479,7 @@ if st.session_state.step == 1:
             st.session_state.unknown_index = 0
             st.session_state.console_log = []
             st.session_state.step = 2
-            auto_save()  # Save progress after initialization.
+            auto_save()
             st.rerun()
 
 # ========= STEP 2: Unknown Speaker Processing =========
