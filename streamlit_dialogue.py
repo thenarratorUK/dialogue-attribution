@@ -5,6 +5,7 @@ import json
 import tempfile
 import mammoth
 import docx
+import base64
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from bs4 import BeautifulSoup, NavigableString
@@ -90,15 +91,26 @@ def write_file_atomic(filepath, lines):
 # ---------------------------
 def auto_save():
     data = {
-        "step": st.session_state.get("step", 1),  # Save the current step
+        "step": st.session_state.get("step", 1),
         "quotes_lines": st.session_state.get("quotes_lines"),
         "speaker_colors": st.session_state.get("speaker_colors"),
         "unknown_index": st.session_state.get("unknown_index", 0),
         "console_log": st.session_state.get("console_log", []),
         "canonical_map": st.session_state.get("canonical_map")
     }
+    if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
+        data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
     with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
+    # Also save speaker_colors JSON.
+    if "speaker_colors" in st.session_state and st.session_state.speaker_colors is not None:
+        with open(SAVED_COLORS_FILE, "w", encoding="utf-8") as f:
+            json.dump(st.session_state.speaker_colors, f, indent=4)
+    # And save the updated quotes TXT file.
+    if "quotes_lines" in st.session_state and "book_name" in st.session_state:
+        quotes_filename = f"{st.session_state.book_name}-quotes.txt"
+        with open(quotes_filename, "w", encoding="utf-8") as f:
+            f.write("".join(st.session_state.quotes_lines))
 
 def auto_load():
     if os.path.exists(PROGRESS_FILE):
@@ -106,6 +118,13 @@ def auto_load():
             data = json.load(f)
         for key, value in data.items():
             st.session_state[key] = value
+        # If docx_bytes was saved, decode it and recreate a temporary file.
+        if "docx_bytes" in st.session_state:
+            docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
+            st.session_state.docx_bytes = docx_bytes
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
+                tmp_docx.write(docx_bytes)
+                st.session_state.docx_path = tmp_docx.name
 
 # ---------------------------
 # DOCX-to-HTML & Marking Functions
@@ -466,8 +485,9 @@ if st.session_state.step == 1:
         if docx_file is None or quotes_file is None:
             st.error("Please provide both the DOCX and Quotes files.")
         else:
+            st.session_state.docx_bytes = docx_file.getvalue()
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
-                tmp_docx.write(docx_file.getvalue())
+                tmp_docx.write(st.session_state.docx_bytes)
                 st.session_state.docx_path = tmp_docx.name
             st.session_state.book_name = os.path.splitext(docx_file.name)[0]
             quotes_text = quotes_file.read().decode("utf-8")
@@ -654,3 +674,8 @@ elif st.session_state.step == 4:
     st.download_button("Download Updated Speaker Colors JSON", updated_colors, file_name=f"{st.session_state.book_name}-speaker_colors.json", mime="application/json")
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes, file_name=f"{st.session_state.book_name}-quotes.txt", mime="text/plain")
+    # If an unmatched_quotes.txt file was generated, provide a download button.
+    if os.path.exists("unmatched_quotes.txt"):
+        with open("unmatched_quotes.txt", "rb") as f:
+            unmatched_bytes = f.read()
+        st.download_button("Download Unmatched Quotes TXT", unmatched_bytes, file_name="unmatched_quotes.txt", mime="text/plain")
