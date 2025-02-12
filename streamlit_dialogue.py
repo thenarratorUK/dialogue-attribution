@@ -10,7 +10,7 @@ from docx.oxml.ns import qn
 from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
 
-# Import the components module for HTML embedding.
+# Import components for HTML embedding.
 import streamlit.components.v1 as components
 
 # ---------------------------
@@ -42,6 +42,7 @@ COLOR_PALETTE = {
     "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)")
 }
 SAVED_COLORS_FILE = "speaker_colors.json"
+PROGRESS_FILE = "progress.json"  # file to store auto-saved progress
 
 def normalize_text(text):
     text = text.replace("\u00A0", " ")
@@ -70,21 +71,40 @@ def smart_title(name):
     exceptions = {"ps", "pc", "ds", "di", "dci"}
     new_words = []
     for w in words:
-        # If the word (in lowercase) is in the exceptions, use all uppercase.
         if w.lower() in exceptions:
             new_words.append(w.upper())
         else:
             new_words.append(w.capitalize())
     result = " ".join(new_words)
-    # Ensure any letter immediately following an apostrophe is lowercase.
     result = re.sub(r"\'([A-Z])", lambda m: "'" + m.group(1).lower(), result)
     return result
-    
+
 def write_file_atomic(filepath, lines):
     with open(filepath, "w", encoding="utf-8") as f:
         f.writelines(lines)
         f.flush()
         os.fsync(f.fileno())
+
+# ---------------------------
+# Auto-Save & Auto-Load Functions
+# ---------------------------
+def auto_save():
+    data = {
+        "quotes_lines": st.session_state.get("quotes_lines"),
+        "speaker_colors": st.session_state.get("speaker_colors"),
+        "unknown_index": st.session_state.get("unknown_index", 0),
+        "console_log": st.session_state.get("console_log", []),
+        "canonical_map": st.session_state.get("canonical_map")
+    }
+    with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
+
+def auto_load():
+    if os.path.exists(PROGRESS_FILE):
+        with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for key, value in data.items():
+            st.session_state[key] = value
 
 # ---------------------------
 # DOCX-to-HTML & Marking Functions
@@ -426,6 +446,15 @@ if 'step' not in st.session_state:
 # ========= STEP 1: Upload & Initialize =========
 if st.session_state.step == 1:
     st.title("DOCX to HTML Converter with Dialogue Highlighting")
+    
+    # Check for saved progress and offer to load it.
+    if os.path.exists(PROGRESS_FILE):
+        st.info("Saved progress found. Click the button below to load your progress.")
+        if st.button("Load Progress"):
+            auto_load()
+            st.success("Progress loaded.")
+            st.rerun()
+    
     st.write("Upload your DOCX and quotes text files. Optionally, upload an existing speaker_colors.json file.")
     docx_file = st.file_uploader("Upload DOCX File", type=["docx"])
     quotes_file = st.file_uploader("Upload Quotes TXT File", type=["txt"])
@@ -435,23 +464,20 @@ if st.session_state.step == 1:
         if docx_file is None or quotes_file is None:
             st.error("Please provide both the DOCX and Quotes files.")
         else:
-            # Save DOCX to a temporary file.
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
                 tmp_docx.write(docx_file.getvalue())
                 st.session_state.docx_path = tmp_docx.name
-            # Automatically extract book name from the DOCX file name.
             st.session_state.book_name = os.path.splitext(docx_file.name)[0]
-            # Read quotes file (as text) and split into lines.
             quotes_text = quotes_file.read().decode("utf-8")
             st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
-            # Load speaker colors from the uploaded JSON, if any.
             if speaker_colors_file is not None:
                 st.session_state.existing_speaker_colors = json.load(speaker_colors_file)
             else:
                 st.session_state.existing_speaker_colors = {}
-            st.session_state.unknown_index = 0  # for unknown speaker processing
+            st.session_state.unknown_index = 0
             st.session_state.console_log = []
             st.session_state.step = 2
+            auto_save()  # Save progress after initialization.
             st.rerun()
 
 # ========= STEP 2: Unknown Speaker Processing =========
@@ -459,7 +485,6 @@ elif st.session_state.step == 2:
     st.title("Step 2: Process Unknown Speakers")
     st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip'/'exit').")
     
-    # Helper: Find the next unknown speaker line.
     def get_next_unknown_line():
         pattern = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]+)(:.*)$")
         for i in range(st.session_state.unknown_index, len(st.session_state.quotes_lines)):
@@ -476,13 +501,13 @@ elif st.session_state.step == 2:
         st.write("No more unknown speakers found.")
         if st.button("Proceed to Color Assignment"):
             st.session_state.step = 3
+            auto_save()
             st.rerun()
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
         st.write(f"**Line {index+1}:**")
         st.write("**Dialogue:**", dialogue)
         
-        # Optional: Show context from the DOCX.
         def get_context_for_dialogue(dialogue):
             try:
                 doc = docx.Document(st.session_state.docx_path)
@@ -512,12 +537,11 @@ elif st.session_state.step == 2:
         else:
             st.write("No context found in DOCX for this quote.")
         
-        # Callback: Process input when the user presses Enter.
         def process_unknown_input():
             new_speaker = st.session_state.new_speaker_input.strip()
             if new_speaker.lower() == "exit":
                 st.session_state.console_log.append("Exiting unknown speaker processing.")
-                st.session_state.step = 3  # advance to next step
+                st.session_state.step = 3
             elif new_speaker.lower() == "skip":
                 st.session_state.console_log.append(f"Skipped line {index+1}.")
                 st.session_state.unknown_index = index + 1
@@ -529,8 +553,9 @@ elif st.session_state.step == 2:
                 st.session_state.quotes_lines[index] = new_line
                 st.session_state.console_log.append(f"Updated line {index+1} with speaker: {updated_speaker}")
                 st.session_state.unknown_index = index + 1
-            st.session_state.new_speaker_input = ""  # clear the input
-
+            st.session_state.new_speaker_input = ""
+            auto_save()
+        
         st.text_input("Enter speaker name (or 'skip'/'exit'):", key="new_speaker_input", on_change=process_unknown_input)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
@@ -538,14 +563,12 @@ elif st.session_state.step == 2:
 elif st.session_state.step == 3:
     st.title("Step 3: Speaker Color Assignment")
     st.write("The app extracts canonical speakers from the quotes file.")
-    # Write the current quotes_lines to a temporary file.
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
     st.write("Canonical Speakers:", canonical_speakers)
-    # Use existing speaker colors from upload if available, else load saved colors.
     existing_colors = st.session_state.existing_speaker_colors if "existing_speaker_colors" in st.session_state else load_existing_colors()
     st.write("Select a highlight color for each speaker (for 'Unknown', it is fixed to 'none').")
     speaker_colors = {}
@@ -567,27 +590,23 @@ elif st.session_state.step == 3:
             st.session_state.speaker_colors = speaker_colors
             save_speaker_colors(speaker_colors)
             st.session_state.step = 4
+            auto_save()
             st.rerun()
 
 # ========= STEP 4: Final HTML Generation =========
 elif st.session_state.step == 4:
     st.title("Step 4: Final HTML Generation")
-    # Write the updated quotes_lines to a temporary file.
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         quotes_file_path = tmp_quotes.name
-    # Create a temporary marker DOCX file.
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_marker:
         marker_docx_path = tmp_marker.name
     create_marker_docx(st.session_state.docx_path, marker_docx_path)
     html = convert_docx_to_html_mammoth(marker_docx_path)
     os.remove(marker_docx_path)
-    # Load quotes using the canonical map.
     quotes_list = load_quotes(quotes_file_path, st.session_state.canonical_map)
-    # Apply dialogue highlighting.
     highlighted_html = highlight_dialogue_in_html(html, quotes_list, st.session_state.speaker_colors)
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
-    # Generate summary and ranking sections.
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
     ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
     final_html_body = summary_html + "\n<br><br><br>\n" + ranking_html + "\n" + final_html_body
@@ -629,7 +648,6 @@ elif st.session_state.step == 4:
     with open(final_html_path, "rb") as f:
         html_bytes = f.read()
     st.download_button("Download HTML File", html_bytes, file_name=f"{st.session_state.book_name}.html", mime="text/html")
-    # Also provide download buttons for the updated speaker_colors.json and quotes file.
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors, file_name=f"{st.session_state.book_name}-speaker_colors.json", mime="application/json")
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
