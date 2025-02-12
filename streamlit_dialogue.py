@@ -541,7 +541,7 @@ def save_speaker_colors(speaker_colors):
 # ---------------------------
 def restart_app():
     st.session_state.clear()
-    st.experimental_rerun()
+    st.rerun()
 
 # ---------------------------
 # Streamlit Multi-Step UI
