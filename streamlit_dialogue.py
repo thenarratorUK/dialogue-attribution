@@ -14,6 +14,69 @@ from collections import Counter
 # Import components for HTML embedding.
 import streamlit.components.v1 as components
 
+# Inject custom CSS
+custom_css = """
+<style>
+:root {
+  --primary-color: #4CAF50;
+  --primary-hover: #45a049;
+  --background-color: #f4f4f4;
+  --text-color: #333333;
+  --card-background: #ffffff;
+  --card-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  --border-radius: 8px;
+  --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Global styles */
+body {
+  background-color: var(--background-color);
+  font-family: var(--font-family);
+  color: var(--text-color);
+  margin: 0;
+  padding: 0;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+/* Style for Streamlit buttons */
+div.stButton > button {
+  background-color: var(--primary-color);
+  color: #ffffff;
+  border: none;
+  padding: 0.75em 1.25em;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+div.stButton > button:hover {
+  background-color: var(--primary-hover);
+}
+
+/* Custom container to wrap sections */
+.custom-container {
+  background: var(--card-background);
+  padding: 2em;
+  border-radius: var(--border-radius);
+  box-shadow: var(--card-shadow);
+  margin-bottom: 2em;
+}
+
+/* Sidebar styling (if you use one) */
+.css-1d391kg {
+  background: var(--card-background);
+  padding: 1em;
+  border-radius: var(--border-radius);
+  box-shadow: var(--card-shadow);
+}
+</style>
+"""
+st.markdown(custom_css, unsafe_allow_html=True)
+
 # ---------------------------
 # Global Constants & Helper Functions
 # ---------------------------
@@ -233,7 +296,7 @@ def create_marker_docx(original_docx, marker_docx):
         marker = f"[[[P{idx}]]]"
         prepend_marker_to_paragraph(para, marker)
     doc.save(marker_docx)
-    st.write("Marker DOCX created.")
+    # Removed "Marker DOCX created." message as requested.
 
 def convert_docx_to_html_mammoth(docx_file):
     with open(docx_file, "rb") as f:
@@ -562,7 +625,7 @@ if 'step' not in st.session_state:
 
 # ========= STEP 1: Upload & Initialize =========
 if st.session_state.step == 1:
-    st.title("DOCX to HTML Converter with Dialogue Highlighting")
+    st.markdown("<h4>DOCX to HTML Converter with Dialogue Highlighting</h4>", unsafe_allow_html=True)
     st.write("Upload your DOCX and quotes text files. Optionally, upload an existing speaker_colors.json file.")
     st.write("Alternatively, upload **just a DOCX** to create a quotes text file.")
     
@@ -639,7 +702,7 @@ if st.session_state.step == 1:
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
-    st.title("Step 2: Process Unknown Speakers")
+    st.markdown("<h4>Step 2: Process Unknown Speakers</h4>", unsafe_allow_html=True)
     st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip', 'exit', or 'undo').")
     
     def get_next_unknown_line():
@@ -665,8 +728,8 @@ elif st.session_state.step == 2:
             st.rerun()
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
-        st.write(f"**Line {index+1}:**")
-        st.write("**Dialogue:**", dialogue)
+        st.write(f"Dialogue (Line {index+1}): {dialogue}")
+        st.markdown("<hr>", unsafe_allow_html=True)
         def get_context_for_dialogue(dialogue):
             try:
                 doc = docx.Document(st.session_state.docx_path)
@@ -690,13 +753,14 @@ elif st.session_state.step == 2:
         context = get_context_for_dialogue(dialogue)
         if context:
             if "previous" in context:
-                st.write("*Previous Paragraph:*", context["previous"])
-            st.markdown("*Current Paragraph:* " + context["current"], unsafe_allow_html=True)
+                st.write(context["previous"])
+            st.markdown(context["current"], unsafe_allow_html=True)
             if "next" in context:
-                st.write("*Next Paragraph:*", context["next"])
+                st.write(context["next"])
         else:
             st.write("No context found in DOCX for this quote.")
-        st.markdown(f"**Dialogue:** {dialogue}")
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.write(f"Dialogue (Line {index+1}): {dialogue}")
         
         def process_unknown_input():
             new_speaker = st.session_state.new_speaker_input.strip()
@@ -736,8 +800,8 @@ elif st.session_state.step == 2:
 
 # ========= STEP 3: Speaker Color Assignment =========
 elif st.session_state.step == 3:
-    st.title("Step 3: Speaker Color Assignment")
-    st.write("Select a highlight color for each canonical speaker (for 'Unknown', it is fixed to 'none').")
+    st.markdown("<h4>Step 3: Speaker Color Assignment</h4>", unsafe_allow_html=True)
+    st.write("Select a highlight color for each canonical speaker.")
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         tmp_quotes_path = tmp_quotes.name
@@ -746,18 +810,25 @@ elif st.session_state.step == 3:
     existing_colors = st.session_state.existing_speaker_colors if "existing_speaker_colors" in st.session_state else load_existing_colors()
     with st.form("color_assignment_form"):
         speaker_colors = {}
+        # Prepare capitalized color options.
+        color_options = [color.title() for color in COLOR_PALETTE.keys()]
         for sp in canonical_speakers:
             if sp.lower() == "unknown":
                 speaker_colors[sp] = "none"
-                st.write(f"{sp}: none")
+                # Do not display a selectbox for 'Unknown'
             else:
                 default_color = existing_colors.get(normalize_speaker_name(sp), "none")
-                speaker_colors[sp] = st.selectbox(
-                    f"Color for {sp}",
-                    options=list(COLOR_PALETTE.keys()),
-                    index=list(COLOR_PALETTE.keys()).index(default_color),
+                try:
+                    default_index = color_options.index(default_color.title())
+                except ValueError:
+                    default_index = color_options.index("None")
+                selected = st.selectbox(
+                    sp,  # Label is just the speaker's name.
+                    options=color_options,
+                    index=default_index,
                     key=sp
                 )
+                speaker_colors[sp] = selected.lower()
         submitted = st.form_submit_button("Submit Colors")
         if submitted:
             st.session_state.speaker_colors = speaker_colors
@@ -768,7 +839,7 @@ elif st.session_state.step == 3:
 
 # ========= STEP 4: Final HTML Generation =========
 elif st.session_state.step == 4:
-    st.title("Step 4: Final HTML Generation")
+    st.markdown("<h4>Step 4: Final HTML Generation</h4>", unsafe_allow_html=True)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         quotes_file_path = tmp_quotes.name
@@ -816,7 +887,6 @@ elif st.session_state.step == 4:
     with open(final_html_path, "w", encoding="utf-8") as f:
         f.write(final_html)
     st.success("Final HTML generated.")
-    st.markdown("### Final HTML Preview")
     components.html(final_html, height=800, scrolling=True)
     with open(final_html_path, "rb") as f:
         html_bytes = f.read()
@@ -833,7 +903,6 @@ elif st.session_state.step == 4:
             unmatched_bytes = f.read()
         st.download_button("Download Unmatched Quotes TXT", unmatched_bytes,
                            file_name="unmatched_quotes.txt", mime="text/plain")
-    # New "Return to Step 2" button:
     if st.button("Return to Step 2"):
         if "book_name" in st.session_state:
             quotes_filename = f"{st.session_state.book_name}-quotes.txt"
