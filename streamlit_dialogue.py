@@ -57,8 +57,8 @@ def match_normalize(text):
     return text.replace("’", "'").replace("‘", "'")
 
 def normalize_speaker_name(name):
-    # For matching, we lowercase the name.
-    return name.replace(".", "").lower().strip()
+    # Replace typographic apostrophes with straight ones, remove periods, lowercase, and trim.
+    return name.replace("’", "'").replace("‘", "'").replace(".", "").lower().strip()
 
 def smart_title(name):
     """
@@ -109,7 +109,8 @@ def auto_save():
         json.dump(data, f, indent=4)
     if st.session_state.get("speaker_colors") is not None:
         with open(SAVED_COLORS_FILE, "w", encoding="utf-8") as f:
-            json.dump(st.session_state.speaker_colors, f, indent=4)
+            # Write in human-readable form.
+            json.dump(st.session_state.speaker_colors, f, indent=4, ensure_ascii=False)
     if st.session_state.get("quotes_lines") and st.session_state.get("book_name"):
         quotes_filename = f"{st.session_state.book_name}-quotes.txt"
         with open(quotes_filename, "w", encoding="utf-8") as f:
@@ -544,7 +545,7 @@ def load_existing_colors():
 
 def save_speaker_colors(speaker_colors):
     with open(SAVED_COLORS_FILE, "w", encoding="utf-8") as f:
-        json.dump(speaker_colors, f, indent=4)
+        json.dump(speaker_colors, f, indent=4, ensure_ascii=False)
 
 # ---------------------------
 # Restart Helper Function (for DOCX-only branch of Step 1)
@@ -821,7 +822,7 @@ elif st.session_state.step == 4:
         html_bytes = f.read()
     st.download_button("Download HTML File", html_bytes,
                        file_name=f"{st.session_state.book_name}.html", mime="text/html")
-    updated_colors = json.dumps(st.session_state.speaker_colors, indent=4).encode("utf-8")
+    updated_colors = json.dumps(st.session_state.speaker_colors, indent=4, ensure_ascii=False).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
                        file_name="speaker_colors.json", mime="application/json")
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
@@ -832,7 +833,7 @@ elif st.session_state.step == 4:
             unmatched_bytes = f.read()
         st.download_button("Download Unmatched Quotes TXT", unmatched_bytes,
                            file_name="unmatched_quotes.txt", mime="text/plain")
-    # New "Return to Step 2" button
+    # New "Return to Step 2" button:
     if st.button("Return to Step 2"):
         if "book_name" in st.session_state:
             quotes_filename = f"{st.session_state.book_name}-quotes.txt"
@@ -840,8 +841,10 @@ elif st.session_state.step == 4:
                 with open(quotes_filename, "r", encoding="utf-8") as f:
                     st.session_state.quotes_lines = f.read().splitlines(keepends=True)
         if os.path.exists("speaker_colors.json"):
-            st.session_state.speaker_colors = json.load(open("speaker_colors.json", "r", encoding="utf-8"))
-            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.speaker_colors.items()}
+            with open("speaker_colors.json", "r", encoding="utf-8") as f:
+                colors = json.load(f)
+            st.session_state.speaker_colors = colors
+            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
         st.session_state.step = 2
         auto_save()
         st.rerun()
