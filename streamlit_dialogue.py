@@ -609,31 +609,32 @@ if st.session_state.step == 1:
     quotes_file = st.file_uploader("Upload Quotes TXT File (optional)", type=["txt"])
     speaker_colors_file = st.file_uploader("Upload Speaker Colors JSON (optional)", type=["json"])
         
-    if st.button("Start Processing"):
-        if docx_file is None:
-            st.error("Please upload a DOCX file.")
+if st.button("Start Processing"):
+    if docx_file is None:
+        st.error("Please upload a DOCX file.")
+    else:
+        st.session_state.book_name = os.path.splitext(docx_file.name)[0]
+        st.session_state.docx_bytes = docx_file.getvalue()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
+            tmp_docx.write(st.session_state.docx_bytes)
+            st.session_state.docx_path = tmp_docx.name
+        if quotes_file is not None:
+            quotes_text = quotes_file.read().decode("utf-8")
+            st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
+            st.session_state.docx_only = False
+            st.session_state.step = 2  # <--- Add this line when quotes_file is provided
         else:
-            st.session_state.book_name = os.path.splitext(docx_file.name)[0]
-            st.session_state.docx_bytes = docx_file.getvalue()
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
-                tmp_docx.write(st.session_state.docx_bytes)
-                st.session_state.docx_path = tmp_docx.name
-            if quotes_file is not None:
-                quotes_text = quotes_file.read().decode("utf-8")
-                st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
-                st.session_state.docx_only = False
-            else:
-                st.session_state.quotes_lines = None
-                st.session_state.docx_only = True
-            if speaker_colors_file is not None:
-                raw = json.load(speaker_colors_file)
-                st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
-            else:
-                st.session_state.existing_speaker_colors = {}
-            st.session_state.unknown_index = 0
-            st.session_state.console_log = []
-            auto_save()
-            st.rerun()
+            st.session_state.quotes_lines = None
+            st.session_state.docx_only = True
+        if speaker_colors_file is not None:
+            raw = json.load(speaker_colors_file)
+            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
+        else:
+            st.session_state.existing_speaker_colors = {}
+        st.session_state.unknown_index = 0
+        st.session_state.console_log = []
+        auto_save()
+        st.rerun()
     
     if st.session_state.get("docx_bytes") and st.session_state.docx_only:
         st.success("DOCX uploaded successfully (DOCX-only branch).")
