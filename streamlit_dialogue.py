@@ -10,8 +10,6 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
-
-# Import components for HTML embedding.
 import streamlit.components.v1 as components
 
 # ------------------------------------------------------------------
@@ -39,13 +37,13 @@ body {
   padding: 0;
 }
 
-/* Smaller titles for steps */
+/* Smaller titles */
 .step-title {
   font-size: 1.25rem;
   margin-bottom: 0.5rem;
 }
 
-/* Style for Streamlit buttons */
+/* Buttons */
 div.stButton > button {
   background-color: var(--primary-color);
   color: #ffffff;
@@ -55,7 +53,6 @@ div.stButton > button {
   cursor: pointer;
   transition: background-color 0.3s ease;
 }
-
 div.stButton > button:hover {
   background-color: var(--primary-hover);
 }
@@ -69,11 +66,11 @@ div.stButton > button:hover {
   margin-bottom: 1.5em;
 }
 
-/* Thin horizontal line */
+/* Thin horizontal line with no extra spacing */
 .hr-thin {
   border: none;
   border-top: 1px solid #ccc;
-  margin: 0.5em 0;
+  margin: 0;
 }
 </style>
 """
@@ -108,15 +105,14 @@ COLOR_PALETTE = {
     "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)")
 }
 SAVED_COLORS_FILE = "speaker_colors.json"
-PROGRESS_FILE = "progress.json"  # File to store auto-saved progress
+PROGRESS_FILE = "progress.json"  # For auto-saving progress
 
 def normalize_text(text):
     text = text.replace("\u00A0", " ")
     text = text.replace("…", "...")
     text = text.replace("“", "\"").replace("”", "\"")
     text = text.replace("’", "'").replace("‘", "'")
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
+    return re.sub(r'\s+', ' ', text).strip()
 
 def match_normalize(text):
     return text.replace("’", "'").replace("‘", "'")
@@ -129,15 +125,9 @@ def smart_title(name):
     if not words:
         return name
     exceptions = {"ps", "pc", "ds", "di", "dci"}
-    new_words = []
-    for w in words:
-        if w.lower() in exceptions:
-            new_words.append(w.upper())
-        else:
-            new_words.append(w.capitalize())
+    new_words = [w.upper() if w.lower() in exceptions else w.capitalize() for w in words]
     result = " ".join(new_words)
-    result = re.sub(r"\(([mf])\)$", lambda m: "(" + m.group(1).upper() + ")", result, flags=re.IGNORECASE)
-    return result
+    return re.sub(r"\(([mf])\)$", lambda m: "(" + m.group(1).upper() + ")", result, flags=re.IGNORECASE)
 
 def write_file_atomic(filepath, lines):
     with open(filepath, "w", encoding="utf-8") as f:
@@ -146,7 +136,7 @@ def write_file_atomic(filepath, lines):
         os.fsync(f.fileno())
 
 # ---------------------------
-# Auto-Save & Auto-Load Functions
+# Auto-Save & Auto-Load
 # ---------------------------
 def auto_save():
     data = {
@@ -169,8 +159,7 @@ def auto_save():
     if st.session_state.get("quotes_lines") and st.session_state.get("book_name"):
         quotes_filename = f"{st.session_state.book_name}-quotes.txt"
         with open(quotes_filename, "w", encoding="utf-8") as f:
-            quotes_text = "".join(st.session_state.quotes_lines)
-            f.write(quotes_text)
+            f.write("".join(st.session_state.quotes_lines))
 
 def auto_load():
     if os.path.exists(PROGRESS_FILE):
@@ -181,10 +170,9 @@ def auto_load():
         if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
         if "docx_bytes" in st.session_state:
-            docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
-            st.session_state.docx_bytes = docx_bytes
+            st.session_state.docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
-                tmp_docx.write(docx_bytes)
+                tmp_docx.write(st.session_state.docx_bytes)
                 st.session_state.docx_path = tmp_docx.name
 
 # ---------------------------
@@ -328,7 +316,7 @@ def highlight_across_nodes(parent, quote, highlight_style, soup):
                 if before:
                     new_nodes.append(NavigableString(before))
                 span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
-                span_tag.string = match_text  # Remove extra bold tags
+                span_tag.string = match_text
                 new_nodes.append(span_tag)
                 if after:
                     new_nodes.append(NavigableString(after))
@@ -595,7 +583,7 @@ def save_speaker_colors(speaker_colors):
         json.dump(speaker_colors, f, indent=4, ensure_ascii=False)
 
 # ---------------------------
-# Restart Helper Function (for DOCX-only branch of Step 1)
+# Restart Helper Function
 # ---------------------------
 def restart_app():
     st.session_state.clear()
@@ -608,20 +596,20 @@ if 'step' not in st.session_state:
     st.session_state.step = 1
 
 # ------------------------------------------------------------------
-# Step 1: Upload & Initialize
+# STEP 1: Upload & Initialize
 # ------------------------------------------------------------------
 if st.session_state.step == 1:
     st.markdown("<h4>DOCX to HTML Converter</h4>", unsafe_allow_html=True)
     st.write("Upload your DOCX file and (optionally) a Quotes TXT file and Speaker Colors JSON file. If only a DOCX is provided, quotes will be extracted automatically.")
     if os.path.exists(PROGRESS_FILE):
-        if st.button("Load Saved Progress", key="load_progress"):
+        if st.button("Load Saved Progress"):
             auto_load()
             st.rerun()
-    docx_file = st.file_uploader("Upload DOCX File", type=["docx"], key="docx_uploader")
-    quotes_file = st.file_uploader("Upload Quotes TXT File (optional)", type=["txt"], key="quotes_uploader")
-    speaker_colors_file = st.file_uploader("Upload Speaker Colors JSON (optional)", type=["json"], key="colors_uploader")
+    docx_file = st.file_uploader("Upload DOCX File", type=["docx"])
+    quotes_file = st.file_uploader("Upload Quotes TXT File (optional)", type=["txt"])
+    speaker_colors_file = st.file_uploader("Upload Speaker Colors JSON (optional)", type=["json"])
         
-    if st.button("Start Processing", key="start_process"):
+    if st.button("Start Processing"):
         if docx_file is None:
             st.error("Please upload a DOCX file.")
         else:
@@ -644,15 +632,30 @@ if st.session_state.step == 1:
                 st.session_state.existing_speaker_colors = {}
             st.session_state.unknown_index = 0
             st.session_state.console_log = []
-            if st.session_state.docx_only:
-                st.session_state.step = 1
-            else:
-                st.session_state.step = 2
             auto_save()
             st.rerun()
+    
+    # If DOCX-only branch, extract quotes
+    if "docx_bytes" in st.session_state and st.session_state.docx_only:
+        st.success("DOCX uploaded successfully (DOCX-only branch).")
+        if st.session_state.get("quotes_lines") is None:
+            dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
+            st.session_state.quotes_lines = [line + "\n" for line in dialogue_list]
+            auto_save()
+            st.rerun()
+        else:
+            st.write("Quotes have been extracted. You can continue.")
+            quotes_txt = "".join(st.session_state.quotes_lines)
+            st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
+                               file_name=f"{st.session_state.book_name}-quotes.txt", mime="text/plain")
+            if st.button("Continue to Step 2"):
+                st.session_state.docx_only = False
+                st.session_state.step = 2
+                auto_save()
+                st.rerun()
 
 # ------------------------------------------------------------------
-# Step 2: Unknown Speaker Processing
+# STEP 2: Unknown Speaker Processing
 # ------------------------------------------------------------------
 elif st.session_state.step == 2:
     st.markdown("<h4>Dialogue Processing (Step 2)</h4>", unsafe_allow_html=True)
@@ -679,7 +682,6 @@ elif st.session_state.step == 2:
             st.rerun()
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
-        # Ensure correct single pair of quotation marks
         st.markdown(f"<strong>Dialogue (Line {index+1}): “{dialogue}”</strong>", unsafe_allow_html=True)
         dialogue_header = f"Dialogue (Line {index+1}): “{dialogue}”"
         context = None
@@ -740,11 +742,12 @@ elif st.session_state.step == 2:
             auto_save()
             st.rerun()
 
-        st.text_input("Enter speaker name (or 'skip'/'exit'/'undo'):", key="new_speaker_input", on_change=process_unknown_input)
+        st.text_input("Enter speaker name (or 'skip'/'exit'/'undo'):", key="new_speaker_input")
+        st.button("Update", on_click=process_unknown_input)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
 # ------------------------------------------------------------------
-# Step 3: Speaker Color Assignment
+# STEP 3: Speaker Color Assignment
 # ------------------------------------------------------------------
 elif st.session_state.step == 3:
     st.markdown("<h4>Speaker Color Assignment (Step 3)</h4>", unsafe_allow_html=True)
@@ -765,37 +768,36 @@ elif st.session_state.step == 3:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Continue", key="continue_colors"):
-                for sp in canonical_speakers:
-                    if sp.lower() != "unknown" and sp not in new_colors:
-                        new_colors[sp] = existing_colors.get(normalize_speaker_name(sp), "none")
-                st.session_state.speaker_colors = {sp: new_colors[sp].lower() for sp in new_colors}
-                st.session_state.step = 4
-                auto_save()
-                st.rerun()
+                # Instead of calling st.rerun() inside this callback,
+                # set a flag and call st.rerun() outside the button block.
+                st.session_state.new_step = 4
         with col2:
             if st.button("Edit Existing Colors", key="edit_existing"):
                 st.session_state.edit_colors = True
-                st.session_state.step = 3.5
-                auto_save()
-                st.rerun()
+                st.session_state.new_step = 3.5
+        if "new_step" in st.session_state:
+            st.session_state.step = st.session_state.new_step
+            del st.session_state.new_step
+            auto_save()
+            st.rerun()
     else:
         st.write("All speakers already have a color assigned.")
-        # Show both Continue and Edit Existing Colors buttons
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Continue", key="continue_noedit"):
-                st.session_state.step = 4
-                auto_save()
-                st.rerun()
+                st.session_state.new_step = 4
         with col2:
             if st.button("Edit Existing Colors", key="edit_existing_only"):
                 st.session_state.edit_colors = True
-                st.session_state.step = 3.5
-                auto_save()
-                st.rerun()
+                st.session_state.new_step = 3.5
+        if "new_step" in st.session_state:
+            st.session_state.step = st.session_state.new_step
+            del st.session_state.new_step
+            auto_save()
+            st.rerun()
 
 # ------------------------------------------------------------------
-# Step 3.5: Full Speaker Color Editing (if chosen)
+# STEP 3.5: Full Speaker Color Editing
 # ------------------------------------------------------------------
 elif st.session_state.step == 3.5:
     st.markdown("<h4>Edit Speaker Colors (Step 3.5)</h4>", unsafe_allow_html=True)
@@ -819,7 +821,7 @@ elif st.session_state.step == 3.5:
         st.rerun()
 
 # ------------------------------------------------------------------
-# Step 4 (or 5): Final HTML Generation
+# STEP 4 (or 5): Final HTML Generation
 # ------------------------------------------------------------------
 elif st.session_state.step in [4, 5]:
     st.markdown("<h4>Final HTML Generation</h4>", unsafe_allow_html=True)
@@ -889,3 +891,18 @@ elif st.session_state.step in [4, 5]:
             unmatched_bytes = f.read()
         st.download_button("Download Unmatched Quotes TXT", unmatched_bytes,
                            file_name="unmatched_quotes.txt", mime="text/plain")
+    # Return to Step 2 button
+    if st.button("Return to Step 2"):
+        if "book_name" in st.session_state:
+            quotes_filename = f"{st.session_state.book_name}-quotes.txt"
+            if os.path.exists(quotes_filename):
+                with open(quotes_filename, "r", encoding="utf-8") as f:
+                    st.session_state.quotes_lines = f.read().splitlines(keepends=True)
+        if os.path.exists("speaker_colors.json"):
+            with open("speaker_colors.json", "r", encoding="utf-8") as f:
+                colors = json.load(f)
+            st.session_state.speaker_colors = colors
+            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
+        st.session_state.step = 2
+        auto_save()
+        st.rerun()
