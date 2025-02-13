@@ -122,6 +122,9 @@ def auto_load():
             data = json.load(f)
         for key, value in data.items():
             st.session_state[key] = value
+        # Normalize existing_speaker_colors if present
+        if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
+            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
         if "docx_bytes" in st.session_state:
             docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
             st.session_state.docx_bytes = docx_bytes
@@ -535,7 +538,9 @@ def load_quotes(quotes_file, canonical_map):
 def load_existing_colors():
     if os.path.exists(SAVED_COLORS_FILE):
         with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            colors = json.load(f)
+        # Normalize keys of the loaded colors dict:
+        return {normalize_speaker_name(k): v for k, v in colors.items()}
     return {}
 
 def save_speaker_colors(speaker_colors):
@@ -619,7 +624,8 @@ if st.session_state.step == 1:
                     st.session_state.quotes_lines = None
                     st.session_state.docx_only = True
                 if speaker_colors_file is not None:
-                    st.session_state.existing_speaker_colors = json.load(speaker_colors_file)
+                    raw = json.load(speaker_colors_file)
+                    st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
                 else:
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
@@ -745,7 +751,6 @@ elif st.session_state.step == 3:
                 speaker_colors[sp] = "none"
                 st.write(f"{sp}: none")
             else:
-                # Use normalized key for matching colors
                 default_color = existing_colors.get(normalize_speaker_name(sp), "none")
                 speaker_colors[sp] = st.selectbox(
                     f"Color for {sp}",
