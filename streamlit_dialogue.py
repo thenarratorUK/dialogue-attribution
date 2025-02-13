@@ -279,7 +279,6 @@ def create_marker_docx(original_docx, marker_docx):
         marker = f"[[[P{idx}]]]"
         prepend_marker_to_paragraph(para, marker)
     doc.save(marker_docx)
-    # Removed "Marker DOCX created." message
 
 def convert_docx_to_html_mammoth(docx_file):
     with open(docx_file, "rb") as f:
@@ -329,8 +328,7 @@ def highlight_across_nodes(parent, quote, highlight_style, soup):
                 if before:
                     new_nodes.append(NavigableString(before))
                 span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
-                # Ensure matched text is bold:
-                span_tag.string = f"<b>{match_text}</b>"
+                span_tag.string = match_text  # Remove extra bold tags
                 new_nodes.append(span_tag)
                 if after:
                     new_nodes.append(NavigableString(after))
@@ -354,7 +352,7 @@ def highlight_quote_in_parent(parent, quote, highlight_style, soup):
                 if before:
                     new_nodes.append(NavigableString(before))
                 span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
-                span_tag.string = f"<b>{match_text}</b>"
+                span_tag.string = match_text
                 new_nodes.append(span_tag)
                 if after:
                     new_nodes.append(NavigableString(after))
@@ -403,7 +401,7 @@ def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset
                 if before:
                     new_nodes.append(NavigableString(before))
                 span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
-                span_tag.string = f"<b>{match_text}</b>"
+                span_tag.string = match_text
                 new_nodes.append(span_tag)
                 if after:
                     new_nodes.append(NavigableString(after))
@@ -412,7 +410,6 @@ def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset
     return match_end
 
 def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
-    # Ensure speaker_colors is not None.
     if speaker_colors is None:
         speaker_colors = {}
     soup = BeautifulSoup(html, "html.parser")
@@ -682,9 +679,8 @@ elif st.session_state.step == 2:
             st.rerun()
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
-        # Display the dialogue header on one line
+        # Ensure correct single pair of quotation marks
         st.markdown(f"<strong>Dialogue (Line {index+1}): “{dialogue}”</strong>", unsafe_allow_html=True)
-        # Display dialogue again after the context
         dialogue_header = f"Dialogue (Line {index+1}): “{dialogue}”"
         context = None
         try:
@@ -758,7 +754,6 @@ elif st.session_state.step == 3:
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
     existing_colors = st.session_state.existing_speaker_colors if st.session_state.get("existing_speaker_colors") else load_existing_colors()
-    # Only ask for speakers (excluding Unknown) with color "none"
     speakers_to_color = [sp for sp in canonical_speakers if sp.lower() != "unknown" and existing_colors.get(normalize_speaker_name(sp), "none") == "none"]
     if speakers_to_color:
         st.write("Please assign colors for the following speakers:")
@@ -785,10 +780,19 @@ elif st.session_state.step == 3:
                 st.rerun()
     else:
         st.write("All speakers already have a color assigned.")
-        if st.button("Continue", key="continue_noedit"):
-            st.session_state.step = 4
-            auto_save()
-            st.rerun()
+        # Show both Continue and Edit Existing Colors buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Continue", key="continue_noedit"):
+                st.session_state.step = 4
+                auto_save()
+                st.rerun()
+        with col2:
+            if st.button("Edit Existing Colors", key="edit_existing_only"):
+                st.session_state.edit_colors = True
+                st.session_state.step = 3.5
+                auto_save()
+                st.rerun()
 
 # ------------------------------------------------------------------
 # Step 3.5: Full Speaker Color Editing (if chosen)
@@ -828,7 +832,6 @@ elif st.session_state.step in [4, 5]:
     html = convert_docx_to_html_mammoth(marker_docx_path)
     os.remove(marker_docx_path)
     quotes_list = load_quotes(quotes_file_path, st.session_state.canonical_map)
-    # Ensure speaker_colors is not None
     if st.session_state.speaker_colors is None:
         st.session_state.speaker_colors = {}
     highlighted_html = highlight_dialogue_in_html(html, quotes_list, st.session_state.speaker_colors)
@@ -886,4 +889,3 @@ elif st.session_state.step in [4, 5]:
             unmatched_bytes = f.read()
         st.download_button("Download Unmatched Quotes TXT", unmatched_bytes,
                            file_name="unmatched_quotes.txt", mime="text/plain")
-    # No load saved progress or restart buttons in Step 4/5
