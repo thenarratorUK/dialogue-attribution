@@ -98,7 +98,8 @@ def auto_save():
         "speaker_colors": st.session_state.get("speaker_colors"),
         "unknown_index": st.session_state.get("unknown_index", 0),
         "console_log": st.session_state.get("console_log", []),
-        "canonical_map": st.session_state.get("canonical_map")
+        "canonical_map": st.session_state.get("canonical_map"),
+        "book_name": st.session_state.get("book_name")  # Ensure book_name is saved.
     }
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
