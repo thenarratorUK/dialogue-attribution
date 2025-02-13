@@ -129,10 +129,10 @@ def auto_load():
 # ---------------------------
 # Load Saved Progress Button
 # ---------------------------
-if os.path.exists(PROGRESS_FILE) and "step" not in st.session_state:
+if os.path.exists(PROGRESS_FILE):
     if st.button("Load Saved Progress"):
-        auto_load()
-        st.rerun()
+         auto_load()
+         st.rerun()
 
 # ---------------------------
 # Alternative Extraction Functions
@@ -658,7 +658,6 @@ elif st.session_state.step == 2:
         dialogue = remainder.lstrip(": ").rstrip("\n")
         st.write(f"**Line {index+1}:**")
         st.write("**Dialogue:**", dialogue)
-        # Display context.
         def get_context_for_dialogue(dialogue):
             try:
                 doc = docx.Document(st.session_state.docx_path)
@@ -688,8 +687,7 @@ elif st.session_state.step == 2:
                 st.write("*Next Paragraph:*", context["next"])
         else:
             st.write("No context found in DOCX for this quote.")
-        # Duplicate dialogue line at the bottom (after context).
-        st.markdown(f"**Dialogue:** {dialogue}")
+        st.markdown(f"**Dialogue:** {dialogue}")  # Duplicate dialogue line at the bottom.
         
         def process_unknown_input():
             new_speaker = st.session_state.new_speaker_input.strip()
@@ -816,7 +814,6 @@ elif st.session_state.step == 4:
     st.download_button("Download HTML File", html_bytes,
                        file_name=f"{st.session_state.book_name}.html", mime="text/html")
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4).encode("utf-8")
-    # Always download speaker colors as "speaker_colors.json"
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
                        file_name="speaker_colors.json", mime="application/json")
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
