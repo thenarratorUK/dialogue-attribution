@@ -76,9 +76,9 @@ div.stButton > button:hover {
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# ---------------------------
+# ------------------------------------------------------------------
 # Global Constants & Helper Functions
-# ---------------------------
+# ------------------------------------------------------------------
 COLOR_PALETTE = {
     "dark grey": (67, 62, 63, 0.5, "black"),
     "burgundy": (134, 8, 0, 0.5, "black"),
@@ -105,7 +105,7 @@ COLOR_PALETTE = {
     "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)")
 }
 SAVED_COLORS_FILE = "speaker_colors.json"
-PROGRESS_FILE = "progress.json"  # For auto-saving progress
+PROGRESS_FILE = "progress.json"
 
 def normalize_text(text):
     text = text.replace("\u00A0", " ")
@@ -136,7 +136,7 @@ def write_file_atomic(filepath, lines):
         os.fsync(f.fileno())
 
 # ---------------------------
-# Auto-Save & Auto-Load
+# Auto-Save & Auto-Load Functions
 # ---------------------------
 def auto_save():
     data = {
@@ -149,7 +149,7 @@ def auto_save():
         "book_name": st.session_state.get("book_name"),
         "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
     }
-    if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
+    if st.session_state.get("docx_bytes") is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
     with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
@@ -167,9 +167,9 @@ def auto_load():
             data = json.load(f)
         for key, value in data.items():
             st.session_state[key] = value
-        if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
+        if st.session_state.get("existing_speaker_colors"):
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
-        if "docx_bytes" in st.session_state:
+        if st.session_state.get("docx_bytes"):
             st.session_state.docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
                 tmp_docx.write(st.session_state.docx_bytes)
@@ -635,8 +635,7 @@ if st.session_state.step == 1:
             auto_save()
             st.rerun()
     
-    # If DOCX-only branch, extract quotes
-    if "docx_bytes" in st.session_state and st.session_state.docx_only:
+    if st.session_state.get("docx_bytes") and st.session_state.docx_only:
         st.success("DOCX uploaded successfully (DOCX-only branch).")
         if st.session_state.get("quotes_lines") is None:
             dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
@@ -682,8 +681,8 @@ elif st.session_state.step == 2:
             st.rerun()
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
-        st.markdown(f"<strong>Dialogue (Line {index+1}): “{dialogue}”</strong>", unsafe_allow_html=True)
-        dialogue_header = f"Dialogue (Line {index+1}): “{dialogue}”"
+        st.markdown(f"<strong>Dialogue (Line {index+1}): \"{dialogue}\"</strong>", unsafe_allow_html=True)
+        dialogue_header = f"Dialogue (Line {index+1}): \"{dialogue}\""
         context = None
         try:
             doc = docx.Document(st.session_state.docx_path)
@@ -756,7 +755,7 @@ elif st.session_state.step == 3:
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
-    existing_colors = st.session_state.existing_speaker_colors if st.session_state.get("existing_speaker_colors") else load_existing_colors()
+    existing_colors = st.session_state.get("existing_speaker_colors") or load_existing_colors()
     speakers_to_color = [sp for sp in canonical_speakers if sp.lower() != "unknown" and existing_colors.get(normalize_speaker_name(sp), "none") == "none"]
     if speakers_to_color:
         st.write("Please assign colors for the following speakers:")
@@ -768,8 +767,7 @@ elif st.session_state.step == 3:
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Continue", key="continue_colors"):
-                # Instead of calling st.rerun() inside this callback,
-                # set a flag and call st.rerun() outside the button block.
+                st.session_state.speaker_colors = {sp: new_colors[sp].lower() for sp in new_colors}
                 st.session_state.new_step = 4
         with col2:
             if st.button("Edit Existing Colors", key="edit_existing"):
@@ -806,7 +804,7 @@ elif st.session_state.step == 3.5:
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
-    existing_colors = st.session_state.existing_speaker_colors if st.session_state.get("existing_speaker_colors") else load_existing_colors()
+    existing_colors = st.session_state.get("existing_speaker_colors") or load_existing_colors()
     full_colors = {}
     for sp in canonical_speakers:
         if sp.lower() == "unknown":
@@ -834,7 +832,7 @@ elif st.session_state.step in [4, 5]:
     html = convert_docx_to_html_mammoth(marker_docx_path)
     os.remove(marker_docx_path)
     quotes_list = load_quotes(quotes_file_path, st.session_state.canonical_map)
-    if st.session_state.speaker_colors is None:
+    if st.session_state.get("speaker_colors") is None:
         st.session_state.speaker_colors = {}
     highlighted_html = highlight_dialogue_in_html(html, quotes_list, st.session_state.speaker_colors)
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
@@ -893,13 +891,13 @@ elif st.session_state.step in [4, 5]:
                            file_name="unmatched_quotes.txt", mime="text/plain")
     # Return to Step 2 button
     if st.button("Return to Step 2"):
-        if "book_name" in st.session_state:
+        if st.session_state.get("book_name"):
             quotes_filename = f"{st.session_state.book_name}-quotes.txt"
             if os.path.exists(quotes_filename):
                 with open(quotes_filename, "r", encoding="utf-8") as f:
                     st.session_state.quotes_lines = f.read().splitlines(keepends=True)
-        if os.path.exists("speaker_colors.json"):
-            with open("speaker_colors.json", "r", encoding="utf-8") as f:
+        if os.path.exists(SAVED_COLORS_FILE):
+            with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
                 colors = json.load(f)
             st.session_state.speaker_colors = colors
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
