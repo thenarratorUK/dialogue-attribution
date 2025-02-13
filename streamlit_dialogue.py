@@ -44,6 +44,12 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: 600;
 }
 
+/* Smaller titles for steps */
+.step-title {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
 /* Style for Streamlit buttons */
 div.stButton > button {
   background-color: var(--primary-color);
@@ -57,6 +63,22 @@ div.stButton > button {
 
 div.stButton > button:hover {
   background-color: var(--primary-hover);
+}
+
+/* Container for major sections */
+.custom-container {
+  background: var(--card-background);
+  padding: 2em;
+  border-radius: var(--border-radius);
+  box-shadow: var(--card-shadow);
+  margin-bottom: 2em;
+}
+
+/* Horizontal line styling */
+.hr-thin {
+  border: none;
+  border-top: 1px solid #ccc;
+  margin: 1em 0;
 }
 </style>
 """
@@ -600,88 +622,60 @@ def restart_app():
 if 'step' not in st.session_state:
     st.session_state.step = 1
 
-# ========= STEP 1: Upload & Initialize ==========
+# ------------------------------------------------------------------
+# Step 1: Upload & Initialize
+# ------------------------------------------------------------------
 if st.session_state.step == 1:
-    st.title("DOCX to HTML Converter with Dialogue Highlighting")
-    st.write("Upload your DOCX and quotes text files. Optionally, upload an existing speaker_colors.json file.")
-    st.write("Alternatively, upload **just a DOCX** to create a quotes text file.")
-    
-    # DOCX-only branch: if a DOCX has already been uploaded.
-    if "docx_bytes" in st.session_state:
-        st.success("DOCX already uploaded and processed.")
-        if st.session_state.get("docx_only", False):
-            if st.session_state.get("quotes_lines") is not None:
-                quotes_txt = "\n".join(st.session_state.quotes_lines)
-                st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
-                                   file_name=f"{st.session_state.book_name}-quotes.txt", mime="text/plain")
-                if st.button("Restart", key="restart_docx"):
-                    restart_app()
-                if st.button("Continue", key="continue_docx"):
-                    st.session_state.docx_only = False
-                    st.session_state.unknown_index = 0
-                    st.session_state.console_log = []
-                    st.session_state.step = 2
-                    auto_save()
-                    st.rerun()
-            else:
-                dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
-                st.session_state.quotes_lines = dialogue_list
-                st.session_state.docx_only = True
-                st.success("Quotes extracted from DOCX.")
-                quotes_txt = "\n".join(dialogue_list)
-                st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
-                                   file_name=f"{st.session_state.book_name}-quotes.txt", mime="text/plain")
-                if st.button("Restart", key="restart_docx"):
-                    restart_app()
-                if st.button("Continue", key="continue_docx"):
-                    st.session_state.docx_only = False
-                    st.session_state.unknown_index = 0
-                    st.session_state.console_log = []
-                    st.session_state.step = 2
-                    auto_save()
-                    st.rerun()
-        else:
-            pass
-    else:
-        docx_file = st.file_uploader("Upload DOCX File", type=["docx"])
-        quotes_file = st.file_uploader("Upload Quotes TXT File (optional)", type=["txt"])
-        speaker_colors_file = st.file_uploader("Upload Speaker Colors JSON (optional)", type=["json"])
+    # Smaller title
+    st.markdown("<h4>DOCX to HTML Converter</h4>", unsafe_allow_html=True)
+    st.write("Upload your DOCX file and (optionally) a Quotes TXT file and Speaker Colors JSON file. If only a DOCX is provided, quotes will be extracted automatically.")
+    # Load Saved Progress button (only in Step 1, at the top)
+    if os.path.exists(PROGRESS_FILE):
+        if st.button("Load Saved Progress", key="load_progress"):
+            auto_load()
+            st.experimental_rerun()
+    # File uploaders
+    docx_file = st.file_uploader("Upload DOCX File", type=["docx"], key="docx_uploader")
+    quotes_file = st.file_uploader("Upload Quotes TXT File (optional)", type=["txt"], key="quotes_uploader")
+    speaker_colors_file = st.file_uploader("Upload Speaker Colors JSON (optional)", type=["json"], key="colors_uploader")
         
-        if st.button("Start Processing"):
-            if docx_file is None:
-                st.error("Please upload a DOCX file.")
+    if st.button("Start Processing", key="start_process"):
+        if docx_file is None:
+            st.error("Please upload a DOCX file.")
+        else:
+            st.session_state.book_name = os.path.splitext(docx_file.name)[0]
+            st.session_state.docx_bytes = docx_file.getvalue()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
+                tmp_docx.write(st.session_state.docx_bytes)
+                st.session_state.docx_path = tmp_docx.name
+            if quotes_file is not None:
+                quotes_text = quotes_file.read().decode("utf-8")
+                st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
+                st.session_state.docx_only = False
             else:
-                st.session_state.book_name = os.path.splitext(docx_file.name)[0]
-                st.session_state.docx_bytes = docx_file.getvalue()
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
-                    tmp_docx.write(st.session_state.docx_bytes)
-                    st.session_state.docx_path = tmp_docx.name
-                if quotes_file is not None:
-                    quotes_text = quotes_file.read().decode("utf-8")
-                    st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
-                    st.session_state.docx_only = False
-                else:
-                    st.session_state.quotes_lines = None
-                    st.session_state.docx_only = True
-                if speaker_colors_file is not None:
-                    raw = json.load(speaker_colors_file)
-                    st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
-                else:
-                    st.session_state.existing_speaker_colors = {}
-                st.session_state.unknown_index = 0
-                st.session_state.console_log = []
-                if st.session_state.docx_only:
-                    st.session_state.step = 1
-                else:
-                    st.session_state.step = 2
-                auto_save()
-                st.rerun()
+                st.session_state.quotes_lines = None
+                st.session_state.docx_only = True
+            if speaker_colors_file is not None:
+                raw = json.load(speaker_colors_file)
+                st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
+            else:
+                st.session_state.existing_speaker_colors = {}
+            st.session_state.unknown_index = 0
+            st.session_state.console_log = []
+            # If DOCX-only branch, remain in Step 1 to extract quotes, otherwise proceed to Step 2
+            if st.session_state.docx_only:
+                st.session_state.step = 1
+            else:
+                st.session_state.step = 2
+            auto_save()
+            st.experimental_rerun()
 
-# ========= STEP 2: Unknown Speaker Processing ==========
+# ------------------------------------------------------------------
+# Step 2: Unknown Speaker Processing
+# ------------------------------------------------------------------
 elif st.session_state.step == 2:
-    st.title("Step 2: Process Unknown Speakers")
-    st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip', 'exit', or 'undo').")
-    
+    st.markdown("<h4>Dialogue Processing (Step 2)</h4>", unsafe_allow_html=True)
+    st.write("Dialogue (Line xxxx):")
     def get_next_unknown_line():
         quotes = st.session_state.get("quotes_lines")
         if quotes is None:
@@ -699,45 +693,40 @@ elif st.session_state.step == 2:
     index, prefix, remainder = get_next_unknown_line()
     if index is None:
         st.write("No more unknown speakers found.")
-        if st.button("Proceed to Color Assignment"):
+        if st.button("Proceed to Color Assignment", key="proceed_color"):
             st.session_state.step = 3
             auto_save()
-            st.rerun()
+            st.experimental_rerun()
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
-        st.write(f"**Line {index+1}:**")
-        st.write("**Dialogue:**", dialogue)
-        def get_context_for_dialogue(dialogue):
-            try:
-                doc = docx.Document(st.session_state.docx_path)
-            except Exception:
-                return None
+        # Combine "Line xxxx" and "Dialogue:" into one header:
+        st.markdown(f"<strong>Dialogue (Line {index+1}):</strong>", unsafe_allow_html=True)
+        st.write(dialogue)
+        # Show paragraphs (without labels) separated by thin horizontal lines
+        context = None
+        try:
+            doc = docx.Document(st.session_state.docx_path)
             normalized_dialogue = normalize_text(dialogue).lower()
             for idx, para in enumerate(doc.paragraphs):
                 para_text = normalize_text(para.text)
                 if normalized_dialogue in para_text.lower():
-                    context = {}
+                    context = []
                     if idx > 0:
-                        context['previous'] = doc.paragraphs[idx-1].text
-                    pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                    highlighted = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para.text)
-                    context['current'] = highlighted
+                        context.append(doc.paragraphs[idx-1].text)
+                    context.append(para.text)
                     if idx+1 < len(doc.paragraphs):
-                        context['next'] = doc.paragraphs[idx+1].text
-                    return context
-            return None
-
-        context = get_context_for_dialogue(dialogue)
+                        context.append(doc.paragraphs[idx+1].text)
+                    break
+        except Exception:
+            context = None
         if context:
-            if "previous" in context:
-                st.write("*Previous Paragraph:*", context["previous"])
-            st.markdown("*Current Paragraph:* " + context["current"], unsafe_allow_html=True)
-            if "next" in context:
-                st.write("*Next Paragraph:*", context["next"])
+            st.markdown("<hr class='hr-thin'>", unsafe_allow_html=True)
+            for para in context:
+                st.write(para)
+            st.markdown("<hr class='hr-thin'>", unsafe_allow_html=True)
         else:
-            st.write("No context found in DOCX for this quote.")
-        st.markdown(f"**Dialogue:** {dialogue}")
-        
+            st.write("No context found in DOCX for this dialogue.")
+        # Text input for new speaker, with on-change processing
         def process_unknown_input():
             new_speaker = st.session_state.new_speaker_input.strip()
             if new_speaker.lower() == "exit":
@@ -770,45 +759,90 @@ elif st.session_state.step == 2:
                 st.session_state.unknown_index = index + 1
             st.session_state.new_speaker_input = ""
             auto_save()
-        
+            st.experimental_rerun()
+
         st.text_input("Enter speaker name (or 'skip'/'exit'/'undo'):", key="new_speaker_input", on_change=process_unknown_input)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
-# ========= STEP 3: Speaker Color Assignment ==========
+# ------------------------------------------------------------------
+# Step 3: Speaker Color Assignment
+# ------------------------------------------------------------------
 elif st.session_state.step == 3:
-    st.title("Step 3: Speaker Color Assignment")
-    st.write("Select a highlight color for each canonical speaker (for 'Unknown', it is fixed to 'none').")
+    st.markdown("<h4>Speaker Color Assignment (Step 3)</h4>", unsafe_allow_html=True)
+    # Only ask for speakers currently assigned "none" (excluding Unknown)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
-    existing_colors = st.session_state.existing_speaker_colors if "existing_speaker_colors" in st.session_state else load_existing_colors()
-    with st.form("color_assignment_form"):
-        speaker_colors = {}
-        for sp in canonical_speakers:
-            if sp.lower() == "unknown":
-                speaker_colors[sp] = "none"
-                st.write(f"{sp}: none")
-            else:
-                default_color = existing_colors.get(normalize_speaker_name(sp), "none")
-                speaker_colors[sp] = st.selectbox(
-                    f"Color for {sp}",
-                    options=list(COLOR_PALETTE.keys()),
-                    index=list(COLOR_PALETTE.keys()).index(default_color),
-                    key=sp
-                )
-        submitted = st.form_submit_button("Submit Colors")
-        if submitted:
-            st.session_state.speaker_colors = speaker_colors
-            save_speaker_colors(speaker_colors)
+    existing_colors = st.session_state.existing_speaker_colors if st.session_state.get("existing_speaker_colors") else load_existing_colors()
+    # Filter speakers: only those (excluding Unknown) that currently have no color ("none")
+    speakers_to_color = [sp for sp in canonical_speakers if sp.lower() != "unknown" and existing_colors.get(normalize_speaker_name(sp), "none") == "none"]
+    if speakers_to_color:
+        st.write("Please assign colors for the following speakers:")
+        new_colors = {}
+        for sp in speakers_to_color:
+            # Display just the name (without "Color for")
+            # Also, show the dropdown options with capitalized names (we transform keys to title-case)
+            options = [option.title() for option in COLOR_PALETTE.keys()]
+            # Determine default; if existing, use that (capitalized), otherwise "None"
+            default = existing_colors.get(normalize_speaker_name(sp), "none").title()
+            new_colors[sp] = st.selectbox(sp, options=options, index=options.index(default), key=f"color_{sp}")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Continue", key="continue_colors"):
+                # For speakers not in speakers_to_color, retain existing colors
+                for sp in canonical_speakers:
+                    if sp.lower() != "unknown" and sp not in new_colors:
+                        new_colors[sp] = existing_colors.get(normalize_speaker_name(sp), "none")
+                st.session_state.speaker_colors = {sp: new_colors[sp].lower() for sp in new_colors}
+                st.session_state.step = 4
+                auto_save()
+                st.experimental_rerun()
+        with col2:
+            if st.button("Edit Existing Colors", key="edit_existing"):
+                # If editing existing colors, load the full list
+                st.session_state.edit_colors = True
+                st.session_state.step = 3.5  # intermediate step for full edit
+                auto_save()
+                st.experimental_rerun()
+    else:
+        st.write("All speakers (excluding 'Unknown') already have a color assigned.")
+        if st.button("Continue", key="continue_noedit"):
             st.session_state.step = 4
             auto_save()
-            st.rerun()
+            st.experimental_rerun()
 
-# ========= STEP 4: Final HTML Generation ==========
-elif st.session_state.step == 4:
-    st.title("Step 4: Final HTML Generation")
+# ------------------------------------------------------------------
+# Step 3.5: Full Speaker Color Editing (if "Edit Existing Colors" is chosen)
+# ------------------------------------------------------------------
+elif st.session_state.step == 3.5:
+    st.markdown("<h4>Edit Speaker Colors (Step 3.5)</h4>", unsafe_allow_html=True)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
+        tmp_quotes.write("".join(st.session_state.quotes_lines))
+        tmp_quotes_path = tmp_quotes.name
+    canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
+    st.session_state.canonical_map = canonical_map
+    existing_colors = st.session_state.existing_speaker_colors if st.session_state.get("existing_speaker_colors") else load_existing_colors()
+    full_colors = {}
+    for sp in canonical_speakers:
+        if sp.lower() == "unknown":
+            continue
+        options = [option.title() for option in COLOR_PALETTE.keys()]
+        default = existing_colors.get(normalize_speaker_name(sp), "none").title()
+        full_colors[sp] = st.selectbox(sp, options=options, index=options.index(default), key=f"full_color_{sp}")
+    if st.button("Continue", key="continue_full_edit"):
+        st.session_state.speaker_colors = {sp: full_colors[sp].lower() for sp in full_colors}
+        st.session_state.step = 4
+        auto_save()
+        st.experimental_rerun()
+
+# ------------------------------------------------------------------
+# Step 4 (or 5): Final HTML Generation
+# ------------------------------------------------------------------
+# If the user edited existing colors, we call this Step 5; otherwise, it's Step 4.
+elif st.session_state.step in [4, 5]:
+    st.markdown("<h4>Final HTML Generation</h4>", unsafe_allow_html=True)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         quotes_file_path = tmp_quotes.name
@@ -873,33 +907,12 @@ elif st.session_state.step == 4:
             unmatched_bytes = f.read()
         st.download_button("Download Unmatched Quotes TXT", unmatched_bytes,
                            file_name="unmatched_quotes.txt", mime="text/plain")
-    # New "Return to Step 2" button:
-    if st.button("Return to Step 2"):
-        if "book_name" in st.session_state:
-            quotes_filename = f"{st.session_state.book_name}-quotes.txt"
-            if os.path.exists(quotes_filename):
-                with open(quotes_filename, "r", encoding="utf-8") as f:
-                    st.session_state.quotes_lines = f.read().splitlines(keepends=True)
-        if os.path.exists("speaker_colors.json"):
-            with open("speaker_colors.json", "r", encoding="utf-8") as f:
-                colors = json.load(f)
-            st.session_state.speaker_colors = colors
-            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
-        st.session_state.step = 2
-        auto_save()
-        st.rerun()
+    # No load saved progress or restart buttons in Step 4/5
 
-# ========= END OF SCRIPT ==========
-# Optionally, include a "Load Saved Progress" button if progress.json exists:
-if os.path.exists(PROGRESS_FILE):
-    if st.button("Load Saved Progress"):
-         auto_load()
-         st.rerun()
-
-# Optionally, add a "Restart" button that clears progress:
-if st.button("Restart"):
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    if os.path.exists(PROGRESS_FILE):
-        os.remove(PROGRESS_FILE)
-    st.rerun()
+# Optionally, add a "Restart" button only in Step 1
+if st.session_state.step == 1:
+    if st.button("Restart", key="restart"):
+        st.session_state.clear()
+        if os.path.exists(PROGRESS_FILE):
+            os.remove(PROGRESS_FILE)
+        st.experimental_rerun()
