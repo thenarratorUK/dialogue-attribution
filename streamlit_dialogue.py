@@ -92,7 +92,7 @@ def write_file_atomic(filepath, lines):
 # Auto-Save & Auto-Load Functions
 # ---------------------------
 def auto_save():
-    # Added "existing_speaker_colors" and "book_name" to the saved state.
+    # Save additional variables "book_name" and "existing_speaker_colors"
     data = {
         "step": st.session_state.get("step", 1),
         "quotes_lines": st.session_state.get("quotes_lines"),
@@ -745,7 +745,8 @@ elif st.session_state.step == 3:
                 speaker_colors[sp] = "none"
                 st.write(f"{sp}: none")
             else:
-                default_color = existing_colors.get(sp, "none")
+                # Use normalized key for matching colors
+                default_color = existing_colors.get(normalize_speaker_name(sp), "none")
                 speaker_colors[sp] = st.selectbox(
                     f"Color for {sp}",
                     options=list(COLOR_PALETTE.keys()),
