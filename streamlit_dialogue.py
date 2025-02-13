@@ -728,8 +728,8 @@ elif st.session_state.step == 2:
             st.rerun()
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
-        st.write(f"Dialogue (Line {index+1}): {dialogue}")
-        st.markdown("<hr>", unsafe_allow_html=True)
+        # Removed the first dialogue display.
+        st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
         def get_context_for_dialogue(dialogue):
             try:
                 doc = docx.Document(st.session_state.docx_path)
@@ -759,8 +759,9 @@ elif st.session_state.step == 2:
                 st.write(context["next"])
         else:
             st.write("No context found in DOCX for this quote.")
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.write(f"Dialogue (Line {index+1}): {dialogue}")
+        st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
+        # Display the dialogue with the "Dialogue (Line xxxx):" part in bold.
+        st.write(f"**Dialogue (Line {index+1}):** {dialogue}")
         
         def process_unknown_input():
             new_speaker = st.session_state.new_speaker_input.strip()
