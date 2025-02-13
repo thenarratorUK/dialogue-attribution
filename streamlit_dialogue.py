@@ -539,7 +539,6 @@ def load_existing_colors():
     if os.path.exists(SAVED_COLORS_FILE):
         with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
             colors = json.load(f)
-        # Normalize keys of the loaded colors dict:
         return {normalize_speaker_name(k): v for k, v in colors.items()}
     return {}
 
@@ -833,3 +832,16 @@ elif st.session_state.step == 4:
             unmatched_bytes = f.read()
         st.download_button("Download Unmatched Quotes TXT", unmatched_bytes,
                            file_name="unmatched_quotes.txt", mime="text/plain")
+    # New "Return to Step 2" button
+    if st.button("Return to Step 2"):
+        if "book_name" in st.session_state:
+            quotes_filename = f"{st.session_state.book_name}-quotes.txt"
+            if os.path.exists(quotes_filename):
+                with open(quotes_filename, "r", encoding="utf-8") as f:
+                    st.session_state.quotes_lines = f.read().splitlines(keepends=True)
+        if os.path.exists("speaker_colors.json"):
+            st.session_state.speaker_colors = json.load(open("speaker_colors.json", "r", encoding="utf-8"))
+            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.speaker_colors.items()}
+        st.session_state.step = 2
+        auto_save()
+        st.rerun()
