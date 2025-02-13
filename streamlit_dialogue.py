@@ -63,17 +63,17 @@ div.stButton > button:hover {
 /* Container for major sections */
 .custom-container {
   background: var(--card-background);
-  padding: 2em;
+  padding: 1.5em;
   border-radius: var(--border-radius);
   box-shadow: var(--card-shadow);
-  margin-bottom: 2em;
+  margin-bottom: 1.5em;
 }
 
-/* Horizontal line styling */
+/* Thin horizontal line */
 .hr-thin {
   border: none;
   border-top: 1px solid #ccc;
-  margin: 1em 0;
+  margin: 0.5em 0;
 }
 </style>
 """
@@ -279,7 +279,7 @@ def create_marker_docx(original_docx, marker_docx):
         marker = f"[[[P{idx}]]]"
         prepend_marker_to_paragraph(para, marker)
     doc.save(marker_docx)
-    st.write("Marker DOCX created.")
+    # Removed "Marker DOCX created." message
 
 def convert_docx_to_html_mammoth(docx_file):
     with open(docx_file, "rb") as f:
@@ -329,7 +329,8 @@ def highlight_across_nodes(parent, quote, highlight_style, soup):
                 if before:
                     new_nodes.append(NavigableString(before))
                 span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
-                span_tag.string = match_text
+                # Ensure matched text is bold:
+                span_tag.string = f"<b>{match_text}</b>"
                 new_nodes.append(span_tag)
                 if after:
                     new_nodes.append(NavigableString(after))
@@ -353,7 +354,7 @@ def highlight_quote_in_parent(parent, quote, highlight_style, soup):
                 if before:
                     new_nodes.append(NavigableString(before))
                 span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
-                span_tag.string = match_text
+                span_tag.string = f"<b>{match_text}</b>"
                 new_nodes.append(span_tag)
                 if after:
                     new_nodes.append(NavigableString(after))
@@ -402,7 +403,7 @@ def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset
                 if before:
                     new_nodes.append(NavigableString(before))
                 span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
-                span_tag.string = match_text
+                span_tag.string = f"<b>{match_text}</b>"
                 new_nodes.append(span_tag)
                 if after:
                     new_nodes.append(NavigableString(after))
@@ -411,6 +412,9 @@ def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset
     return match_end
 
 def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
+    # Ensure speaker_colors is not None.
+    if speaker_colors is None:
+        speaker_colors = {}
     soup = BeautifulSoup(html, "html.parser")
     candidate_info = build_candidate_info(soup)
     unmatched_quotes = []
@@ -612,7 +616,6 @@ if 'step' not in st.session_state:
 if st.session_state.step == 1:
     st.markdown("<h4>DOCX to HTML Converter</h4>", unsafe_allow_html=True)
     st.write("Upload your DOCX file and (optionally) a Quotes TXT file and Speaker Colors JSON file. If only a DOCX is provided, quotes will be extracted automatically.")
-    # Load Saved Progress button (only in Step 1, at the top)
     if os.path.exists(PROGRESS_FILE):
         if st.button("Load Saved Progress", key="load_progress"):
             auto_load()
@@ -679,8 +682,10 @@ elif st.session_state.step == 2:
             st.rerun()
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
-        st.markdown(f"<strong>Dialogue (Line {index+1}):</strong>", unsafe_allow_html=True)
-        st.write(dialogue)
+        # Display the dialogue header on one line
+        st.markdown(f"<strong>Dialogue (Line {index+1}): “{dialogue}”</strong>", unsafe_allow_html=True)
+        # Display dialogue again after the context
+        dialogue_header = f"Dialogue (Line {index+1}): “{dialogue}”"
         context = None
         try:
             doc = docx.Document(st.session_state.docx_path)
@@ -702,6 +707,7 @@ elif st.session_state.step == 2:
             for para in context:
                 st.write(para)
             st.markdown("<hr class='hr-thin'>", unsafe_allow_html=True)
+            st.markdown(f"<strong>{dialogue_header}</strong>", unsafe_allow_html=True)
         else:
             st.write("No context found in DOCX for this dialogue.")
         def process_unknown_input():
@@ -752,7 +758,7 @@ elif st.session_state.step == 3:
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
     existing_colors = st.session_state.existing_speaker_colors if st.session_state.get("existing_speaker_colors") else load_existing_colors()
-    # Only assign colors for speakers with "none", excluding Unknown.
+    # Only ask for speakers (excluding Unknown) with color "none"
     speakers_to_color = [sp for sp in canonical_speakers if sp.lower() != "unknown" and existing_colors.get(normalize_speaker_name(sp), "none") == "none"]
     if speakers_to_color:
         st.write("Please assign colors for the following speakers:")
@@ -778,7 +784,7 @@ elif st.session_state.step == 3:
                 auto_save()
                 st.rerun()
     else:
-        st.write("All speakers (excluding 'Unknown') already have a color assigned.")
+        st.write("All speakers already have a color assigned.")
         if st.button("Continue", key="continue_noedit"):
             st.session_state.step = 4
             auto_save()
@@ -822,6 +828,9 @@ elif st.session_state.step in [4, 5]:
     html = convert_docx_to_html_mammoth(marker_docx_path)
     os.remove(marker_docx_path)
     quotes_list = load_quotes(quotes_file_path, st.session_state.canonical_map)
+    # Ensure speaker_colors is not None
+    if st.session_state.speaker_colors is None:
+        st.session_state.speaker_colors = {}
     highlighted_html = highlight_dialogue_in_html(html, quotes_list, st.session_state.speaker_colors)
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
@@ -878,13 +887,3 @@ elif st.session_state.step in [4, 5]:
         st.download_button("Download Unmatched Quotes TXT", unmatched_bytes,
                            file_name="unmatched_quotes.txt", mime="text/plain")
     # No load saved progress or restart buttons in Step 4/5
-
-# ------------------------------------------------------------------
-# Optionally, add a "Restart" button only in Step 1
-# ------------------------------------------------------------------
-if st.session_state.step == 1:
-    if st.button("Restart", key="restart"):
-        st.session_state.clear()
-        if os.path.exists(PROGRESS_FILE):
-            os.remove(PROGRESS_FILE)
-        st.rerun()
