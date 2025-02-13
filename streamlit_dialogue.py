@@ -127,6 +127,14 @@ def auto_load():
                 st.session_state.docx_path = tmp_docx.name
 
 # ---------------------------
+# Load Saved Progress Button
+# ---------------------------
+if os.path.exists(PROGRESS_FILE) and "step" not in st.session_state:
+    if st.button("Load Saved Progress"):
+        auto_load()
+        st.rerun()
+
+# ---------------------------
 # Alternative Extraction Functions
 # ---------------------------
 ATTACH_NO_SPACE = {"'", "’", "‘", '"', "“", "”", ",", ".", ";", ":", "?", "!"}
@@ -808,7 +816,7 @@ elif st.session_state.step == 4:
     st.download_button("Download HTML File", html_bytes,
                        file_name=f"{st.session_state.book_name}.html", mime="text/html")
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4).encode("utf-8")
-    # The speaker colors JSON now always downloads as "speaker_colors.json"
+    # Always download speaker colors as "speaker_colors.json"
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
                        file_name="speaker_colors.json", mime="application/json")
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
