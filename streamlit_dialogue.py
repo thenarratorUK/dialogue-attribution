@@ -780,109 +780,91 @@ elif st.session_state.step == 3:
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
-    # Load existing colors.
+    # Load existing colors (or default to empty dict)
     existing_colors = st.session_state.get("existing_speaker_colors") or load_existing_colors() or {}
-    # Determine which speakers need a new assignment.
+    
+    # Determine which speakers need a new assignment
     speakers_to_assign = [
         sp for sp in canonical_speakers 
         if sp.lower() != "unknown" and (normalize_speaker_name(sp) not in existing_colors or existing_colors.get(normalize_speaker_name(sp), "none") == "none")
     ]
+    
     if speakers_to_assign:
         st.write("Assign colors to the following speakers:")
-        with st.form("color_assignment_form"):
-            new_speaker_colors = {}
-            color_options = [color.title() for color in COLOR_PALETTE.keys()]
-            for sp in speakers_to_assign:
-                norm = normalize_speaker_name(sp)
-                default_color = existing_colors.get(norm, "none")
-                try:
-                    default_index = color_options.index(default_color.title())
-                except ValueError:
-                    default_index = color_options.index("None")
-                selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+sp)
-                new_speaker_colors[norm] = selected.lower()
-            form_submitted = st.form_submit_button("Submit Colors")
-            if form_submitted:
-                for norm, col in new_speaker_colors.items():
-                    existing_colors[norm] = col
-                updated_colors = {}
-                for sp in canonical_speakers:
-                    norm = normalize_speaker_name(sp)
-                    if sp.lower() == "unknown":
-                        updated_colors[norm] = "none"
-                    else:
-                        updated_colors[norm] = existing_colors.get(norm, "none")
-                st.session_state.speaker_colors = updated_colors
-                st.session_state.existing_speaker_colors = existing_colors
-                save_speaker_colors(updated_colors)
-                st.success("Colors assigned for new speakers.")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Continue"):
-                st.session_state.step = 4
-                auto_save()
-                st.rerun()
-        with col2:
-            if st.button("Edit Speaker Colors"):
-                # Load saved colors from disk for editing.
-                if os.path.exists(SAVED_COLORS_FILE):
-                    with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
-                        st.session_state.speaker_colors = json.load(f)
-                    st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.speaker_colors.items()}
-                st.session_state.step = "edit_colors"
-                auto_save()
-                st.rerun()
-    else:
-        st.write("All speakers already have assigned colors.")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("Continue"):
-                st.session_state.step = 4
-                auto_save()
-                st.rerun()
-        with col2:
-            if st.button("Edit Speaker Colors"):
-                if os.path.exists(SAVED_COLORS_FILE):
-                    with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
-                        st.session_state.speaker_colors = json.load(f)
-                    st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.speaker_colors.items()}
-                st.session_state.step = "edit_colors"
-                auto_save()
-                st.rerun()
-
-# ========= EDIT COLORS: Full Speaker Color Assignment =========
-elif st.session_state.step == "edit_colors":
-    st.markdown("<h4>Edit Speaker Colors</h4>", unsafe_allow_html=True)
-    st.write("Edit the assigned colors for all speakers (excluding 'Unknown'):")
-    # Generate canonical speakers
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
-        tmp_quotes.write("".join(st.session_state.quotes_lines))
-        tmp_quotes_path = tmp_quotes.name
-    canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
-    st.session_state.canonical_map = canonical_map
-    # Get existing colors from session or from disk
-    existing_colors = st.session_state.get("speaker_colors") or load_existing_colors() or {}
-    # Start with a copy of the current colors so we don't lose assignments for speakers not edited.
-    full_speaker_colors = existing_colors.copy()
-    with st.form("edit_color_form"):
         color_options = [color.title() for color in COLOR_PALETTE.keys()]
-        for sp in canonical_speakers:
-            if sp.lower() == "unknown":
-                continue
+        updated_colors = {}
+        for sp in speakers_to_assign:
             norm = normalize_speaker_name(sp)
             default_color = existing_colors.get(norm, "none")
             try:
                 default_index = color_options.index(default_color.title())
             except ValueError:
                 default_index = color_options.index("None")
-            selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+sp)
-            full_speaker_colors[norm] = selected.lower()
-        submitted = st.form_submit_button("Submit Edited Colors")
-        if submitted:
-            st.session_state.speaker_colors = full_speaker_colors
-            st.session_state.existing_speaker_colors = full_speaker_colors.copy()
-            save_speaker_colors(full_speaker_colors)
-            st.success("Speaker colors updated.")
+            selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+norm)
+            updated_colors[norm] = selected.lower()
+        # Merge updated colors with any already assigned values.
+        for norm, col in updated_colors.items():
+            existing_colors[norm] = col
+        # Build final dictionary using normalized keys.
+        final_colors = {}
+        for sp in canonical_speakers:
+            norm = normalize_speaker_name(sp)
+            if sp.lower() == "unknown":
+                final_colors[norm] = "none"
+            else:
+                final_colors[norm] = existing_colors.get(norm, "none")
+        st.session_state.speaker_colors = final_colors
+        st.session_state.existing_speaker_colors = existing_colors.copy()
+        save_speaker_colors(final_colors)
+        st.success("Speaker colors updated.")
+    else:
+        st.write("All speakers already have assigned colors.")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Continue"):
+            st.session_state.step = 4
+            auto_save()
+            st.rerun()
+    with col2:
+        if st.button("Edit Speaker Colors"):
+            # Load saved colors from disk for editing.
+            if os.path.exists(SAVED_COLORS_FILE):
+                with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
+                    st.session_state.speaker_colors = json.load(f)
+                st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.speaker_colors.items()}
+            st.session_state.step = "edit_colors"
+            auto_save()
+            st.rerun()
+
+# ========= EDIT COLORS: Full Speaker Color Assignment =========
+elif st.session_state.step == "edit_colors":
+    st.markdown("<h4>Edit Speaker Colors</h4>", unsafe_allow_html=True)
+    st.write("Edit the assigned colors for all speakers (excluding 'Unknown'):")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
+        tmp_quotes.write("".join(st.session_state.quotes_lines))
+        tmp_quotes_path = tmp_quotes.name
+    canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
+    st.session_state.canonical_map = canonical_map
+    # Load current colors (or default to empty)
+    existing_colors = st.session_state.get("speaker_colors") or load_existing_colors() or {}
+    updated_colors = existing_colors.copy()
+    color_options = [color.title() for color in COLOR_PALETTE.keys()]
+    for sp in canonical_speakers:
+        if sp.lower() == "unknown":
+            continue
+        norm = normalize_speaker_name(sp)
+        default_color = existing_colors.get(norm, "none")
+        try:
+            default_index = color_options.index(default_color.title())
+        except ValueError:
+            default_index = color_options.index("None")
+        selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+norm)
+        updated_colors[norm] = selected.lower()
+    st.session_state.speaker_colors = updated_colors
+    st.session_state.existing_speaker_colors = updated_colors.copy()
+    save_speaker_colors(updated_colors)
+    st.success("Speaker colors updated.")
     if st.button("Continue"):
         st.session_state.step = 4
         auto_save()
