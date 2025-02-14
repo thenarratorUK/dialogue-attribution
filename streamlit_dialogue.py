@@ -499,7 +499,7 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
     for sp in summary_order:
         count = counts.get(sp, 0)
         percentage = round((count / total_lines) * 100) if total_lines > 0 else 0
-        color_key = speaker_colors.get(sp, "none")
+        color_key = speaker_colors.get(normalize_speaker_name(sp), "none")
         if sp.lower() == "unknown":
             color_key = "none"
         rgba = COLOR_PALETTE.get(color_key, COLOR_PALETTE["none"])
@@ -521,7 +521,7 @@ def generate_ranking_html(quotes_list, speaker_colors):
     lines.append('<h2 style="margin: 0 0 5px 0;">Speaker Ranking</h2>')
     for sp, count in filtered:
         percentage = round((count / total_lines) * 100) if total_lines > 0 else 0
-        color_key = speaker_colors.get(sp, "none")
+        color_key = speaker_colors.get(normalize_speaker_name(sp), "none")
         rgba = COLOR_PALETTE.get(color_key, COLOR_PALETTE["none"])
         if color_key == "none":
             style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
