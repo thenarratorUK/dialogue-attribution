@@ -571,11 +571,13 @@ def load_quotes(quotes_file, canonical_map):
     return quotes_list
 
 def load_existing_colors():
-    if os.path.exists(SAVED_COLORS_FILE):
-        with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
-            colors = json.load(f)
-        return {normalize_speaker_name(k): v for k, v in colors.items()}
-    return {}
+  if os.path.exists(SAVED_COLORS_FILE):
+    with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
+        loaded_colors = json.load(f)
+    normalized_loaded = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
+    st.write("Loaded normalized speaker_colors from JSON:", normalized_loaded)
+    st.session_state.speaker_colors = normalized_loaded
+    st.session_state.existing_speaker_colors = normalized_loaded
 
 def save_speaker_colors(speaker_colors):
     with open(SAVED_COLORS_FILE, "w", encoding="utf-8") as f:
@@ -854,8 +856,10 @@ elif st.session_state.step == "edit_colors":
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         tmp_quotes_path = tmp_quotes.name
-    canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
-    st.session_state.canonical_map = canonical_map
+        canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
+        normalized_canonical = {sp: normalize_speaker_name(sp) for sp in canonical_speakers}
+        st.write("Normalized canonical speakers:", normalized_canonical)
+        st.session_state.canonical_map = canonical_map
     existing_colors = st.session_state.speaker_colors if "speaker_colors" in st.session_state else load_existing_colors()
     with st.form("edit_color_form"):
         full_speaker_colors = {}
