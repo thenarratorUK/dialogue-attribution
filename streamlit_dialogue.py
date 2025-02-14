@@ -801,8 +801,11 @@ elif st.session_state.step == 3:
     # Load existing colors (if any)
     existing_colors = st.session_state.existing_speaker_colors if "existing_speaker_colors" in st.session_state else load_existing_colors()
     
-    # Filter speakers (exclude "Unknown") that have not been assigned a color or are still "none"
-    speakers_to_assign = [sp for sp in canonical_speakers if sp.lower() != "unknown" and (sp not in existing_colors or existing_colors.get(sp, "none") == "none")]
+    # Filter speakers (excluding "Unknown") using normalized keys
+    speakers_to_assign = [
+        sp for sp in canonical_speakers 
+        if sp.lower() != "unknown" and (normalize_speaker_name(sp) not in existing_colors or existing_colors.get(normalize_speaker_name(sp), "none") == "none")
+    ]
     
     if speakers_to_assign:
         st.write("Assign colors to the following speakers:")
@@ -810,25 +813,29 @@ elif st.session_state.step == 3:
             new_speaker_colors = {}
             color_options = [color.title() for color in COLOR_PALETTE.keys()]
             for sp in speakers_to_assign:
-                default_color = existing_colors.get(sp, "none")
+                norm = normalize_speaker_name(sp)
+                default_color = existing_colors.get(norm, "none")
                 try:
                     default_index = color_options.index(default_color.title())
                 except ValueError:
                     default_index = color_options.index("None")
                 selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+sp)
-                new_speaker_colors[sp] = selected.lower()
+                new_speaker_colors[norm] = selected.lower()
             form_submitted = st.form_submit_button("Submit Colors")
             if form_submitted:
-                for sp, col in new_speaker_colors.items():
-                    existing_colors[sp] = col
+                # Update existing_colors for these speakers
+                for norm, col in new_speaker_colors.items():
+                    existing_colors[norm] = col
+                # Create a combined dictionary using the canonical speaker names as keys.
                 updated_colors = {}
                 for sp in canonical_speakers:
+                    norm = normalize_speaker_name(sp)
                     if sp.lower() == "unknown":
                         updated_colors[sp] = "none"
                     else:
-                        updated_colors[sp] = existing_colors.get(sp, "none")
+                        updated_colors[sp] = existing_colors.get(norm, "none")
                 st.session_state.speaker_colors = updated_colors
-                st.session_state.existing_speaker_colors = updated_colors
+                st.session_state.existing_speaker_colors = existing_colors
                 save_speaker_colors(updated_colors)
                 st.success("Colors assigned for new speakers.")
         col1, col2 = st.columns(2)
