@@ -809,9 +809,9 @@ elif st.session_state.step == 3:
                 for sp in canonical_speakers:
                     norm = normalize_speaker_name(sp)
                     if sp.lower() == "unknown":
-                        updated_colors[sp] = "none"
+                        updated_colors[norm] = "none"
                     else:
-                        updated_colors[sp] = existing_colors.get(norm, "none")
+                        updated_colors[norm] = existing_colors.get(norm, "none")
                 st.session_state.speaker_colors = updated_colors
                 st.session_state.existing_speaker_colors = existing_colors
                 save_speaker_colors(updated_colors)
