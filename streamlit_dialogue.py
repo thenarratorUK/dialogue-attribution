@@ -780,7 +780,7 @@ elif st.session_state.step == 3:
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
     # Load existing colors.
-    existing_colors = st.session_state.existing_speaker_colors if "existing_speaker_colors" in st.session_state else load_existing_colors()
+    existing_colors = st.session_state.get("existing_speaker_colors") or load_existing_colors() or {}
     # Determine which speakers need a new assignment.
     speakers_to_assign = [
         sp for sp in canonical_speakers 
