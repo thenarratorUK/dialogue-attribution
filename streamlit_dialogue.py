@@ -155,7 +155,6 @@ def write_file_atomic(filepath, lines):
 # Auto-Save & Auto-Load Functions
 # ---------------------------
 def auto_save():
-    # Save additional variables "book_name" and "existing_speaker_colors"
     data = {
         "step": st.session_state.get("step", 1),
         "quotes_lines": st.session_state.get("quotes_lines"),
@@ -194,9 +193,6 @@ def auto_load():
                 tmp_docx.write(docx_bytes)
                 st.session_state.docx_path = tmp_docx.name
 
-# ---------------------------
-# Load Saved Progress Button
-# ---------------------------
 if os.path.exists(PROGRESS_FILE):
     if st.button("Load Saved Progress"):
          auto_load()
@@ -294,7 +290,6 @@ def create_marker_docx(original_docx, marker_docx):
         marker = f"[[[P{idx}]]]"
         prepend_marker_to_paragraph(para, marker)
     doc.save(marker_docx)
-    # "Marker DOCX created." message removed.
 
 def convert_docx_to_html_mammoth(docx_file):
     with open(docx_file, "rb") as f:
@@ -609,7 +604,7 @@ def save_speaker_colors(speaker_colors):
         json.dump(speaker_colors, f, indent=4, ensure_ascii=False)
 
 # ---------------------------
-# Restart Helper Function (for DOCX-only branch of Step 1)
+# Restart Helper Function
 # ---------------------------
 def restart_app():
     st.session_state.clear()
@@ -806,8 +801,8 @@ elif st.session_state.step == 3:
     # Load existing colors (if any)
     existing_colors = st.session_state.existing_speaker_colors if "existing_speaker_colors" in st.session_state else load_existing_colors()
     
-    # Filter speakers (exclude "Unknown") that have not been assigned a color (or are still "none")
-    speakers_to_assign = [sp for sp in canonical_speakers if sp.lower() != "unknown" and (normalize_speaker_name(sp) not in existing_colors or existing_colors[normalize_speaker_name(sp)] == "none")]
+    # Filter speakers (exclude "Unknown") that have not been assigned a color or are still "none"
+    speakers_to_assign = [sp for sp in canonical_speakers if sp.lower() != "unknown" and (sp not in existing_colors or existing_colors.get(sp, "none") == "none")]
     
     if speakers_to_assign:
         st.write("Assign colors to the following speakers:")
@@ -815,8 +810,7 @@ elif st.session_state.step == 3:
             new_speaker_colors = {}
             color_options = [color.title() for color in COLOR_PALETTE.keys()]
             for sp in speakers_to_assign:
-                norm = normalize_speaker_name(sp)
-                default_color = existing_colors.get(norm, "none")
+                default_color = existing_colors.get(sp, "none")
                 try:
                     default_index = color_options.index(default_color.title())
                 except ValueError:
@@ -825,18 +819,14 @@ elif st.session_state.step == 3:
                 new_speaker_colors[sp] = selected.lower()
             form_submitted = st.form_submit_button("Submit Colors")
             if form_submitted:
-                # Update existing_colors for these speakers
                 for sp, col in new_speaker_colors.items():
-                    norm = normalize_speaker_name(sp)
-                    existing_colors[norm] = col
-                # Create a combined dictionary for all speakers (use existing assignments if present)
+                    existing_colors[sp] = col
                 updated_colors = {}
                 for sp in canonical_speakers:
-                    norm = normalize_speaker_name(sp)
                     if sp.lower() == "unknown":
                         updated_colors[sp] = "none"
                     else:
-                        updated_colors[sp] = existing_colors.get(norm, "none")
+                        updated_colors[sp] = existing_colors.get(sp, "none")
                 st.session_state.speaker_colors = updated_colors
                 st.session_state.existing_speaker_colors = updated_colors
                 save_speaker_colors(updated_colors)
@@ -884,8 +874,8 @@ elif st.session_state.step == "edit_colors":
                 full_speaker_colors[sp] = "none"
                 st.write(f"{sp}: none")
             else:
-                norm = normalize_speaker_name(sp)
-                default_color = existing_colors.get(norm, "none")
+                # Use the canonical name as key
+                default_color = existing_colors.get(sp, "none")
                 try:
                     default_index = color_options.index(default_color.title())
                 except ValueError:
