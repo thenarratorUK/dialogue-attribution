@@ -413,7 +413,7 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
         expected_quote_lower = match_normalize(expected_quote).lower()
         speaker = quote_data['speaker']
         norm_speaker = normalize_speaker_name(speaker)
-        color_choice = speaker_colors.get(norm_speaker, "none")
+        color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
         if norm_speaker == "unknown":
             color_choice = "none"
         rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
