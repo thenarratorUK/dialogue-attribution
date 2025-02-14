@@ -873,7 +873,7 @@ elif st.session_state.step == "edit_colors":
             except ValueError:
                 default_index = color_options.index("None")
             selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+sp)
-            full_speaker_colors[sp] = selected.lower()
+            full_speaker_colors[normalize_speaker_name(sp)] = selected.lower()
         submitted = st.form_submit_button("Submit Edited Colors")
         if submitted:
             st.session_state.speaker_colors = full_speaker_colors
