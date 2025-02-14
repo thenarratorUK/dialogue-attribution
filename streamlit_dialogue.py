@@ -888,7 +888,7 @@ elif st.session_state.step == "edit_colors":
 # ========= STEP 4: Final HTML Generation =========
 elif st.session_state.step == 4:
     if "speaker_colors" not in st.session_state or st.session_state.speaker_colors is None:
-    st.session_state.speaker_colors = load_existing_colors() or {}st.markdown("<h4>Step 4: Final HTML Generation</h4>", unsafe_allow_html=True)
+        st.session_state.speaker_colors = load_existing_colors() or {}st.markdown("<h4>Step 4: Final HTML Generation</h4>", unsafe_allow_html=True)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         quotes_file_path = tmp_quotes.name
