@@ -736,7 +736,7 @@ elif st.session_state.step == 2:
 # ========= STEP 3: Speaker Color Assignment =========
 elif st.session_state.step == 3:
     st.title("Step 3: Speaker Color Assignment")
-    # If speaker colors have already been assigned, offer options to continue or edit.
+    # If speaker colors are already assigned, offer options to continue or edit.
     if "speaker_colors" in st.session_state and st.session_state.speaker_colors:
         st.write("All speakers already have assigned colors.")
         col1, col2 = st.columns(2)
@@ -754,7 +754,7 @@ elif st.session_state.step == 3:
             tmp_quotes_path = tmp_quotes.name
         canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
         st.session_state.canonical_map = canonical_map
-        # Prefer saved speaker_colors if available.
+        # Use existing speaker colors if available.
         if "speaker_colors" in st.session_state and st.session_state.speaker_colors:
             existing_colors = st.session_state.speaker_colors
         else:
