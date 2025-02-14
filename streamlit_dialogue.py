@@ -541,15 +541,15 @@ def get_canonical_speakers(quotes_file):
             match = pattern.match(line.strip())
             if match:
                 speaker_raw = match.group(1).strip()
-                speakers.append(smart_title(speaker_raw))
+                speakers.append(smart_title(str(speaker_raw)))  # Ensure it's a string
     seen = set()
     canonical_speakers = []
     for s in speakers:
-        norm = normalize_speaker_name(s)
+        norm = normalize_speaker_name(str(s))
         if norm not in seen:
             seen.add(norm)
             canonical_speakers.append(s)
-    canonical_map = {normalize_speaker_name(s): s for s in canonical_speakers}
+    canonical_map = {normalize_speaker_name(str(s)): s for s in canonical_speakers}
     return canonical_speakers, canonical_map
 
 def load_quotes(quotes_file, canonical_map):
