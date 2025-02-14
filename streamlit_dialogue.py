@@ -845,7 +845,7 @@ elif st.session_state.step == 3:
         st.success("Speaker colors updated.")
     else:
         st.write("All speakers already have assigned colors.")
-    
+        st.session_state.speaker_colors = st.session_state.get("speaker_colors") or load_existing_colors() or {}
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Continue"):
