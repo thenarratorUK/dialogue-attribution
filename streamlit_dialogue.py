@@ -408,14 +408,14 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
     candidate_info = build_candidate_info(soup)
     unmatched_quotes = []
     last_global_offset = 0
-for quote_data in quotes_list:
-    expected_quote = quote_data['quote'].strip('“”"')
-    expected_quote_lower = match_normalize(expected_quote).lower()
-    speaker = quote_data['speaker']
-    norm_speaker = normalize_speaker_name(speaker)
-    color_choice = speaker_colors.get(norm_speaker, "none")
-    if norm_speaker == "unknown":
-        color_choice = "none"
+    for quote_data in quotes_list:
+        expected_quote = quote_data['quote'].strip('“”"')
+        expected_quote_lower = match_normalize(expected_quote).lower()
+        speaker = quote_data['speaker']
+        norm_speaker = normalize_speaker_name(speaker)
+        color_choice = speaker_colors.get(norm_speaker, "none")
+        if norm_speaker == "unknown":
+            color_choice = "none"
         rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
         if color_choice == "none":
             highlight_style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
