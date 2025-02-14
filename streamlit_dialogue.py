@@ -854,15 +854,13 @@ elif st.session_state.step == 3:
 elif st.session_state.step == "edit_colors":
     st.markdown("<h4>Edit Speaker Colors</h4>", unsafe_allow_html=True)
     st.write("Edit the assigned colors for all speakers (excluding 'Unknown'):")
-    # Generate canonical speakers
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
-    # Get existing colors from session or from disk
+    # Start with a copy of the existing colors so that speakers not edited remain unchanged.
     existing_colors = st.session_state.get("speaker_colors") or load_existing_colors() or {}
-    # Start with a copy of the current colors so we don't lose assignments for speakers not edited.
     full_speaker_colors = existing_colors.copy()
     with st.form("edit_color_form"):
         color_options = [color.title() for color in COLOR_PALETTE.keys()]
@@ -875,7 +873,7 @@ elif st.session_state.step == "edit_colors":
                 default_index = color_options.index(default_color.title())
             except ValueError:
                 default_index = color_options.index("None")
-            selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+sp)
+            selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+norm)
             full_speaker_colors[norm] = selected.lower()
         submitted = st.form_submit_button("Submit Edited Colors")
         if submitted:
