@@ -658,9 +658,10 @@ if st.session_state.step == 1:
                 else:
                     st.session_state.quotes_lines = None
                     st.session_state.docx_only = True
-                if speaker_colors_file is not None:
-                    raw = json.load(speaker_colors_file)
-                    st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
+               if speaker_colors_file is not None:
+                   raw = json.load(speaker_colors_file)
+                   st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
+                   save_speaker_colors(st.session_state.existing_speaker_colors)
                 else:
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
