@@ -859,29 +859,27 @@ elif st.session_state.step == 3:
 # ========= EDIT COLORS: Full Speaker Color Assignment =========
 elif st.session_state.step == "edit_colors":
     st.markdown("<h4>Edit Speaker Colors</h4>", unsafe_allow_html=True)
-    st.write("Edit the assigned colors for all speakers:")
+    st.write("Edit the assigned colors for all speakers (excluding 'Unknown'):")
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
+    # Use the current speaker_colors for defaults
     existing_colors = st.session_state.speaker_colors if "speaker_colors" in st.session_state else load_existing_colors()
     with st.form("edit_color_form"):
         full_speaker_colors = {}
         color_options = [color.title() for color in COLOR_PALETTE.keys()]
         for sp in canonical_speakers:
             if sp.lower() == "unknown":
-                full_speaker_colors[sp] = "none"
-                st.write(f"{sp}: none")
-            else:
-                # Use the canonical name as key
-                default_color = existing_colors.get(sp, "none")
-                try:
-                    default_index = color_options.index(default_color.title())
-                except ValueError:
-                    default_index = color_options.index("None")
-                selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+sp)
-                full_speaker_colors[sp] = selected.lower()
+                continue  # Skip Unknown
+            default_color = existing_colors.get(sp, "none")
+            try:
+                default_index = color_options.index(default_color.title())
+            except ValueError:
+                default_index = color_options.index("None")
+            selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+sp)
+            full_speaker_colors[sp] = selected.lower()
         submitted = st.form_submit_button("Submit Edited Colors")
         if submitted:
             st.session_state.speaker_colors = full_speaker_colors
