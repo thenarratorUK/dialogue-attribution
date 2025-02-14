@@ -18,15 +18,18 @@ import streamlit.components.v1 as components
 custom_css = """
 <style>
 :root {
-  --primary-color: #4CAF50;
-  --primary-hover: #45a049;
-  --background-color: #f4f4f4;
-  --text-color: #333333;
+  --primary-color: #008080;      /* Teal */
+  --primary-hover: #007070;
+  --background-color: #fdfdfd;
+  --text-color: #222222;
   --card-background: #ffffff;
-  --card-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-  --border-radius: 8px;
-  --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  --card-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+  --border-radius: 10px;
+  --font-family: 'Avenir', sans-serif;
+  --accent-color: #ff9900;
 }
+
+/* Global Styles */
 body {
   background-color: var(--background-color);
   font-family: var(--font-family);
@@ -34,10 +37,14 @@ body {
   margin: 0;
   padding: 0;
 }
+
 h1, h2, h3, h4, h5, h6 {
   color: var(--text-color);
-  font-weight: 600;
+  font-weight: 700;
+  margin-bottom: 0.5em;
 }
+
+/* Button Styles */
 div.stButton > button {
   background-color: var(--primary-color);
   color: #ffffff;
@@ -45,11 +52,15 @@ div.stButton > button {
   padding: 0.75em 1.25em;
   border-radius: var(--border-radius);
   cursor: pointer;
-  transition: background-color 0.3s ease;
+  transition: background-color 0.3s ease, transform 0.2s;
 }
+
 div.stButton > button:hover {
   background-color: var(--primary-hover);
+  transform: translateY(-2px);
 }
+
+/* Card/Container Styling */
 .custom-container {
   background: var(--card-background);
   padding: 2em;
@@ -57,11 +68,26 @@ div.stButton > button:hover {
   box-shadow: var(--card-shadow);
   margin-bottom: 2em;
 }
+
 .css-1d391kg {
   background: var(--card-background);
   padding: 1em;
   border-radius: var(--border-radius);
   box-shadow: var(--card-shadow);
+}
+
+/* Form Element Styling */
+input, select, textarea {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 0.5em;
+  font-size: 1em;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 5px rgba(0, 128, 128, 0.3);
 }
 </style>
 """
