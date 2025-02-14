@@ -844,7 +844,7 @@ elif st.session_state.step == 3:
         save_speaker_colors(final_colors)
         st.success("Speaker colors updated.")
     else:
-    st.write("All speakers already have assigned colors.")
+        st.write("All speakers already have assigned colors.")
     if os.path.exists(SAVED_COLORS_FILE):
         with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
             loaded_colors = json.load(f)
