@@ -844,8 +844,15 @@ elif st.session_state.step == 3:
         save_speaker_colors(final_colors)
         st.success("Speaker colors updated.")
     else:
-        st.write("All speakers already have assigned colors.")
-        st.session_state.speaker_colors = st.session_state.get("speaker_colors") or load_existing_colors() or {}
+    st.write("All speakers already have assigned colors.")
+    if os.path.exists(SAVED_COLORS_FILE):
+        with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
+            loaded_colors = json.load(f)
+        st.session_state.speaker_colors = loaded_colors
+        st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
+    else:
+        st.session_state.speaker_colors = {}
+        st.session_state.existing_speaker_colors = {}
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Continue"):
@@ -854,11 +861,11 @@ elif st.session_state.step == 3:
             st.rerun()
     with col2:
         if st.button("Edit Speaker Colors"):
-            # Load saved colors from disk for editing.
             if os.path.exists(SAVED_COLORS_FILE):
                 with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
-                    st.session_state.speaker_colors = json.load(f)
-                st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.speaker_colors.items()}
+                    loaded_colors = json.load(f)
+                st.session_state.speaker_colors = loaded_colors
+                st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
             st.session_state.step = "edit_colors"
             auto_save()
             st.rerun()
