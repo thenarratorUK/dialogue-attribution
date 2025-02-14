@@ -854,30 +854,33 @@ elif st.session_state.step == 3:
 elif st.session_state.step == "edit_colors":
     st.markdown("<h4>Edit Speaker Colors</h4>", unsafe_allow_html=True)
     st.write("Edit the assigned colors for all speakers (excluding 'Unknown'):")
+    # Generate canonical speakers
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         tmp_quotes_path = tmp_quotes.name
-        canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
-        normalized_canonical = {sp: normalize_speaker_name(sp) for sp in canonical_speakers}
-        st.session_state.canonical_map = canonical_map
-    existing_colors = st.session_state.speaker_colors if "speaker_colors" in st.session_state else load_existing_colors()
+    canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
+    st.session_state.canonical_map = canonical_map
+    # Get existing colors from session or from disk
+    existing_colors = st.session_state.get("speaker_colors") or load_existing_colors() or {}
+    # Start with a copy of the current colors so we don't lose assignments for speakers not edited.
+    full_speaker_colors = existing_colors.copy()
     with st.form("edit_color_form"):
-        full_speaker_colors = {}
         color_options = [color.title() for color in COLOR_PALETTE.keys()]
         for sp in canonical_speakers:
             if sp.lower() == "unknown":
                 continue
-            default_color = existing_colors.get(normalize_speaker_name(sp), "none")
+            norm = normalize_speaker_name(sp)
+            default_color = existing_colors.get(norm, "none")
             try:
                 default_index = color_options.index(default_color.title())
             except ValueError:
                 default_index = color_options.index("None")
             selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+sp)
-            full_speaker_colors[normalize_speaker_name(sp)] = selected.lower()
+            full_speaker_colors[norm] = selected.lower()
         submitted = st.form_submit_button("Submit Edited Colors")
         if submitted:
             st.session_state.speaker_colors = full_speaker_colors
-            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in full_speaker_colors.items()}
+            st.session_state.existing_speaker_colors = full_speaker_colors.copy()
             save_speaker_colors(full_speaker_colors)
             st.success("Speaker colors updated.")
     if st.button("Continue"):
