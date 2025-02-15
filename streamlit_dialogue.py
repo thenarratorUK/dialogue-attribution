@@ -172,7 +172,7 @@ def auto_save():
             json.dump(st.session_state.speaker_colors, f, indent=4, ensure_ascii=False)
     if st.session_state.get("quotes_lines") and st.session_state.get("book_name"):
         quotes_filename = f"{st.session_state.book_name}-quotes.txt"
-        # Here we join with an explicit newline separator and append a newline at the end.
+        # Join with an explicit newline separator.
         with open(quotes_filename, "w", encoding="utf-8") as f:
             f.write("\n".join(line.rstrip("\n") for line in st.session_state.quotes_lines) + "\n")
 
@@ -594,12 +594,14 @@ def load_quotes(quotes_file, canonical_map):
     return quotes_list
 
 def load_existing_colors():
-  if os.path.exists(SAVED_COLORS_FILE):
-    with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
-        loaded_colors = json.load(f)
-    normalized_loaded = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
-    st.session_state.speaker_colors = normalized_loaded
-    st.session_state.existing_speaker_colors = normalized_loaded
+    if os.path.exists(SAVED_COLORS_FILE):
+        with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
+            loaded_colors = json.load(f)
+        normalized_loaded = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
+        st.session_state.speaker_colors = normalized_loaded
+        st.session_state.existing_speaker_colors = normalized_loaded
+        return normalized_loaded
+    return {}
 
 def save_speaker_colors(speaker_colors):
     with open(SAVED_COLORS_FILE, "w", encoding="utf-8") as f:
@@ -685,6 +687,9 @@ if st.session_state.step == 1:
                     st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
                     save_speaker_colors(st.session_state.existing_speaker_colors)
                 else:
+                    # For a new document, if no speaker_colors_file is provided, delete any existing saved file.
+                    if os.path.exists(SAVED_COLORS_FILE):
+                        os.remove(SAVED_COLORS_FILE)
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
                 st.session_state.console_log = []
