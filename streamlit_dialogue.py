@@ -84,7 +84,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # ---------------------------
 # Global Constants & Helper Functions
 # ---------------------------
-# Updated COLOR_PALETTE: Added an "error" key. For "error", we want no highlighting.
+# Updated COLOR_PALETTE: Added an "error" key.
 COLOR_PALETTE = {
     "dark grey": (67, 62, 63, 0.5, "black"),
     "burgundy": (134, 8, 0, 0.5, "black"),
@@ -109,7 +109,7 @@ COLOR_PALETTE = {
     "wine": (202, 78, 78, 0.5, "black"),
     "lime": (193, 227, 71, 0.5, "black"),
     "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)"),
-    "error": (0, 0, 0, 0, "")  # 0 alpha means transparent background; no text color override.
+    "error": (0, 0, 0, 0, "")  # For "Error": transparent background, no text color override.
 }
 SAVED_COLORS_FILE = "speaker_colors.json"
 PROGRESS_FILE = "progress.json"
@@ -172,9 +172,9 @@ def auto_save():
             json.dump(st.session_state.speaker_colors, f, indent=4, ensure_ascii=False)
     if st.session_state.get("quotes_lines") and st.session_state.get("book_name"):
         quotes_filename = f"{st.session_state.book_name}-quotes.txt"
+        # Here we join with an explicit newline separator and append a newline at the end.
         with open(quotes_filename, "w", encoding="utf-8") as f:
-            quotes_text = "".join(st.session_state.quotes_lines)
-            f.write(quotes_text)
+            f.write("\n".join(line.rstrip("\n") for line in st.session_state.quotes_lines) + "\n")
 
 def auto_load():
     if os.path.exists(PROGRESS_FILE):
@@ -466,11 +466,7 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
                         matched = True
                         break
         if not matched:
-            unmatched_quotes.append(f"{quote_data['speaker']}: \"{quote_data['quote']}\" [Index: {quote_data['index']}]")
-    if unmatched_quotes:
-        with open("unmatched_quotes.txt", "w", encoding="utf-8") as f:
-            f.write("\n".join(unmatched_quotes))
-        st.write(f"⚠️ Unmatched quotes saved to 'unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
+            st.write(f"⚠️ Could not match: {quote_data['speaker']}: \"{quote_data['quote']}\"")
     return str(soup)
 
 def apply_manual_indentation_with_markers(original_docx, html):
@@ -505,13 +501,14 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
     counts = Counter(quote["speaker"] for quote in quotes_list)
     total_lines = sum(counts.values())
     summary_order = []
+    # Skip "Unknown" and "Error" from summary list.
     if "Unknown" in counts:
         summary_order.append("Unknown")
     for sp in speakers:
-        if sp != "Unknown" and sp not in summary_order:
+        if sp != "Unknown" and normalize_speaker_name(sp) != "error" and sp not in summary_order:
             summary_order.append(sp)
     for sp in counts:
-        if sp not in summary_order:
+        if normalize_speaker_name(sp) != "error" and sp not in summary_order:
             summary_order.append(sp)
     lines = []
     lines.append('<div id="character-summary" style="border: 1px solid #ccc; padding: 10px; margin-bottom: 20px;">')
@@ -538,7 +535,7 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
 def generate_ranking_html(quotes_list, speaker_colors):
     counts = Counter(quote["speaker"] for quote in quotes_list)
     total_lines = sum(counts.values())
-    filtered = [(sp, count) for sp, count in counts.items() if sp.lower() != "unknown" and count > 1]
+    filtered = [(sp, count) for sp, count in counts.items() if sp.lower() != "unknown" and normalize_speaker_name(sp) != "error" and count > 1]
     filtered.sort(key=lambda x: x[1], reverse=True)
     lines = []
     lines.append('<div id="speaker-ranking" style="margin-top: 20px;">')
@@ -546,12 +543,9 @@ def generate_ranking_html(quotes_list, speaker_colors):
     for sp, count in filtered:
         percentage = round((count / total_lines) * 100) if total_lines > 0 else 0
         norm_sp = normalize_speaker_name(sp)
-        if norm_sp in ["unknown", "error"]:
-            color_key = "none" if norm_sp=="unknown" else "error"
-        else:
-            color_key = speaker_colors.get(norm_sp, "none")
+        color_key = speaker_colors.get(norm_sp, "none")
         rgba = COLOR_PALETTE.get(color_key, COLOR_PALETTE["none"])
-        if color_key == "none" or color_key=="error":
+        if color_key in ["none", "error"]:
             style = "background-color: transparent;"
         else:
             style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
@@ -811,11 +805,11 @@ elif st.session_state.step == 3:
     # Load existing colors (or default to empty dict)
     existing_colors = st.session_state.get("existing_speaker_colors") or load_existing_colors() or {}
     
-    # Determine which speakers need a new assignment (skip both "unknown" and "error")
+    # Determine which speakers need a new assignment, skipping "unknown" and "error"
     speakers_to_assign = [
-    sp for sp in canonical_speakers 
-    if normalize_speaker_name(sp) not in ["unknown", "error"] and (normalize_speaker_name(sp) not in existing_colors or existing_colors.get(normalize_speaker_name(sp), "none") == "none")
-]
+        sp for sp in canonical_speakers 
+        if normalize_speaker_name(sp) not in ["unknown", "error"] and (normalize_speaker_name(sp) not in existing_colors or existing_colors.get(normalize_speaker_name(sp), "none") == "none")
+    ]
     
     if speakers_to_assign:
         st.write("Assign colors to the following speakers:")
@@ -837,8 +831,8 @@ elif st.session_state.step == 3:
         final_colors = {}
         for sp in canonical_speakers:
             norm = normalize_speaker_name(sp)
-            if sp.lower() in ["unknown", "error"]:
-                final_colors[norm] = "none" if sp.lower() == "unknown" else "error"
+            if norm in ["unknown", "error"]:
+                final_colors[norm] = "none" if norm=="unknown" else "error"
             else:
                 final_colors[norm] = existing_colors.get(norm, "none")
         st.session_state.speaker_colors = final_colors
@@ -885,7 +879,7 @@ elif st.session_state.step == "edit_colors":
     updated_colors = existing_colors.copy()
     color_options = [color.title() for color in COLOR_PALETTE.keys()]
     for sp in canonical_speakers:
-        if sp.lower() == "unknown":
+        if normalize_speaker_name(sp) == "unknown":
             continue
         norm = normalize_speaker_name(sp)
         default_color = existing_colors.get(norm, "none")
@@ -910,7 +904,8 @@ elif st.session_state.step == 4:
         st.session_state.speaker_colors = load_existing_colors() or {}
     st.markdown("<h4>Step 4: Final HTML Generation</h4>", unsafe_allow_html=True)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
-        tmp_quotes.write("".join(st.session_state.quotes_lines))
+        # Use explicit newline join to ensure every line ends with a newline.
+        tmp_quotes.write("\n".join(line.rstrip("\n") for line in st.session_state.quotes_lines) + "\n")
         quotes_file_path = tmp_quotes.name
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_marker:
         marker_docx_path = tmp_marker.name
