@@ -813,9 +813,9 @@ elif st.session_state.step == 3:
     
     # Determine which speakers need a new assignment (skip both "unknown" and "error")
     speakers_to_assign = [
-        sp for sp in canonical_speakers 
-        if sp.lower() not in ["unknown", "error"] and (normalize_speaker_name(sp) not in existing_colors or existing_colors.get(normalize_speaker_name(sp), "none") == "none")
-    ]
+    sp for sp in canonical_speakers 
+    if normalize_speaker_name(sp) not in ["unknown", "error"] and (normalize_speaker_name(sp) not in existing_colors or existing_colors.get(normalize_speaker_name(sp), "none") == "none")
+]
     
     if speakers_to_assign:
         st.write("Assign colors to the following speakers:")
