@@ -938,7 +938,7 @@ elif st.session_state.step == 4:
         else:
             color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
             rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
-            highlight_style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
+            highlight_style = f"color: {str(rgba[4])}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
         matched = False
         for candidate, start, end, text in candidate_info:
             if end < last_global_offset:
