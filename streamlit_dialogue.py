@@ -86,13 +86,13 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # ---------------------------
 # Updated COLOR_PALETTE: Added an "error" key.
 COLOR_PALETTE = {
-    "dark grey": (67, 62, 63, 0.5, "black"),
-    "burgundy": (134, 8, 0, 0.5, "black"),
-    "red": (255, 10, 0, 0.5, "black"),
-    "orange": (255, 113, 0, 0.5, "black"),
-    "yellow": (255, 221, 0, 0.5, "black"),
-    "dark yellow": (190, 174, 0, 0.5, "black"),
-    "brown": (129, 100, 51, 0.5, "black"),
+    "dark grey": (180, 178, 179, 1, "rgb(30, 28, 29)"),
+    "burgundy": (207, 156, 153, 1, "rgb(55, 4, 1)"),
+    "red": (255, 153, 153, 1, "rgb(107, 9, 6)"),
+    "orange": (255, 198, 153, 1, "rgb(119, 62, 17)"),
+    "yellow": (255, 241, 153, 1, "rgb(107, 93, 5)"),
+    "dark yellow": (230, 223, 153, 1, "rgb(78, 71, 1)"),
+    "brown": (205, 192, 173, 1, "rgb(61, 48, 29)"),
     "silver": (224, 224, 224, 0.5, "black"),
     "light green": (17, 255, 0, 0.5, "black"),
     "dark green": (9, 97, 0, 0.5, "black"),
@@ -988,7 +988,7 @@ elif st.session_state.step == 4:
     }}
     span.highlight {{
       background-color: var(--highlight-color, transparent);
-      padding: 0.15em 0px;
+      padding: 0em 0px;
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
     }}
