@@ -512,7 +512,7 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
             summary_order.append(sp)
     lines = []
     lines.append('<div id="character-summary" style="border: 1px solid #ccc; padding: 10px; margin-bottom: 20px;">')
-    lines.append('<h2 style="margin: 0 0 7px 0;">Character Summary</h2>')
+    lines.append('<h2 style="margin: 0 0 8px 0;">Character Summary</h2>')
     for sp in summary_order:
         count = counts.get(sp, 0)
         percentage = round((count / total_lines) * 100) if total_lines > 0 else 0
@@ -528,7 +528,7 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
             style = "background-color: transparent;"
         else:
             style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 7px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
+        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 8px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
     lines.append('</div>')
     return "\n".join(lines)
 
