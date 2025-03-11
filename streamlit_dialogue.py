@@ -988,7 +988,7 @@ elif st.session_state.step == 4:
     }}
     span.highlight {{
       background-color: var(--highlight-color, transparent);
-      padding: 0.31em 0px;
+      padding: 0.33em 0px;
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
     }}
