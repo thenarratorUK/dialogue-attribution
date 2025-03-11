@@ -528,7 +528,7 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
             style = "background-color: transparent;"
         else:
             style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 10px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
+        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 8px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
     lines.append('</div>')
     return "\n".join(lines)
 
@@ -549,7 +549,7 @@ def generate_ranking_html(quotes_list, speaker_colors):
             style = "background-color: transparent;"
         else:
             style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 10px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
+        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 8px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
     lines.append('</div>')
     return "\n".join(lines)
 
