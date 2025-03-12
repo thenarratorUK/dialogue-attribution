@@ -3,7 +3,6 @@ import re
 import os
 import json
 import tempfile
-import time
 import mammoth
 import docx
 import base64
@@ -154,12 +153,6 @@ def write_file_atomic(filepath, lines):
 # Auto-Save & Auto-Load Functions
 # ---------------------------
 def auto_save():
-    last_save_time = st.session_state.get("last_save_time", 0)
-
-    # Avoid saving too frequently (only save every 5 seconds)
-    if time.time() - last_save_time < 5:
-        return
-
     data = {
         "step": st.session_state.get("step", 1),
         "quotes_lines": st.session_state.get("quotes_lines"),
@@ -168,26 +161,20 @@ def auto_save():
         "console_log": st.session_state.get("console_log", []),
         "canonical_map": st.session_state.get("canonical_map"),
         "book_name": st.session_state.get("book_name"),
-        "existing_speaker_colors": st.session_state.get("existing_speaker_colors"),
+        "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
     }
-
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
-
     with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
-
     if st.session_state.get("speaker_colors") is not None:
         with open(SAVED_COLORS_FILE, "w", encoding="utf-8") as f:
             json.dump(st.session_state.speaker_colors, f, indent=4, ensure_ascii=False)
-
     if st.session_state.get("quotes_lines") and st.session_state.get("book_name"):
         quotes_filename = f"{st.session_state.book_name}-quotes.txt"
+        # Join with an explicit newline separator.
         with open(quotes_filename, "w", encoding="utf-8") as f:
             f.write("\n".join(line.rstrip("\n") for line in st.session_state.quotes_lines) + "\n")
-
-    # Update last save time
-    st.session_state["last_save_time"] = time.time()
 
 def auto_load():
     if os.path.exists(PROGRESS_FILE):
