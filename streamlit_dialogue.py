@@ -18,16 +18,17 @@ import streamlit.components.v1 as components
 custom_css = """
 <style>
 :root {
-  --primary-color: #008080;      /* Teal */
-  --primary-hover: #007070;
-  --background-color: #fdfdfd;
-  --text-color: #222222;
+  --primary-color: #4CAF50;
+  --primary-hover: #45a049;
+  --background-color: #f4f4f4;
+  --text-color: #333333;
   --card-background: #ffffff;
-  --card-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-  --border-radius: 10px;
-  --font-family: 'Avenir', sans-serif;
-  --accent-color: #ff9900;
+  --card-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  --border-radius: 8px;
+  --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
+
+/* Global styles */
 body {
   background-color: var(--background-color);
   font-family: var(--font-family);
@@ -35,11 +36,13 @@ body {
   margin: 0;
   padding: 0;
 }
+
 h1, h2, h3, h4, h5, h6 {
   color: var(--text-color);
-  font-weight: 700;
-  margin-bottom: 0.5em;
+  font-weight: 600;
 }
+
+/* Style for Streamlit buttons */
 div.stButton > button {
   background-color: var(--primary-color);
   color: #ffffff;
@@ -47,12 +50,14 @@ div.stButton > button {
   padding: 0.75em 1.25em;
   border-radius: var(--border-radius);
   cursor: pointer;
-  transition: background-color 0.3s ease, transform 0.2s;
+  transition: background-color 0.3s ease;
 }
+
 div.stButton > button:hover {
   background-color: var(--primary-hover);
-  transform: translateY(-2px);
 }
+
+/* Custom container to wrap sections */
 .custom-container {
   background: var(--card-background);
   padding: 2em;
@@ -60,22 +65,13 @@ div.stButton > button:hover {
   box-shadow: var(--card-shadow);
   margin-bottom: 2em;
 }
+
+/* Sidebar styling (if you use one) */
 .css-1d391kg {
   background: var(--card-background);
   padding: 1em;
   border-radius: var(--border-radius);
   box-shadow: var(--card-shadow);
-}
-input, select, textarea {
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 0.5em;
-  font-size: 1em;
-}
-input:focus, select:focus, textarea:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 5px rgba(0, 128, 128, 0.3);
 }
 </style>
 """
@@ -84,36 +80,33 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # ---------------------------
 # Global Constants & Helper Functions
 # ---------------------------
-# Updated COLOR_PALETTE: Added an "error" key.
-
 COLOR_PALETTE = {
-    "dark grey": (180, 178, 179, 1, "rgb(30, 28, 29)"),
-    "burgundy": (207, 156, 153, 1, "rgb(55, 4, 1)"),
-    "red": (255, 153, 153, 1, "rgb(107, 9, 6)"),
-    "orange": (255, 198, 153, 1, "rgb(119, 62, 17)"),
-    "yellow": (255, 241, 153, 1, "rgb(107, 93, 5)"),
-    "dark yellow": (230, 223, 153, 1, "rgb(78, 71, 1)"),
-    "brown": (205, 192, 173, 1, "rgb(61, 48, 29)"),
-    "silver": (243, 243, 243, 1, "rgb(96, 96, 96)"),
-    "light green": (160, 255, 153, 1, "rgb(20, 115, 13)"),
-    "dark green": (157, 192, 152, 1, "rgb(7, 42, 2)"),
-    "turquoise": (153, 255, 234, 1, "rgb(3, 105, 84)"),
-    "light blue": (153, 248, 254, 1, "rgb(9, 104, 110)"),
-    "bright blue": (152, 166, 255, 1, "rgb(4, 18, 107)"),
-    "dark blue": (152, 166, 255, 1, "rgb(4, 18, 107)"),
-    "navy blue": (153, 162, 201, 1, "rgb(4, 13, 52)"),
-    "dark purple": (219, 173, 222, 1, "rgb(68, 22, 71)"),
-    "light purple": (231, 203, 254, 1, "rgb(81, 53, 104)"),
-    "bright pink": (255, 153, 236, 1, "rgb(112, 10, 93)"),
-    "light pink": (254, 238, 248, 1, "rgb(103, 87, 97)"),
-    "pale pink": (254, 238, 248, 1, "rgb(103, 87, 97)"),
-    "wine": (234, 184, 185, 1, "rgb(90, 40, 41)"),
-    "lime": (230, 244, 182, 1, "rgb(81, 95, 33)"),
-    "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)"),
-    "error": (0, 0, 0, 0, "")  # For "Error": transparent background, no text color override.
+    "dark grey": (67, 62, 63, 0.5, "black"),
+    "burgundy": (134, 8, 0, 0.5, "black"),
+    "red": (255, 10, 0, 0.5, "black"),
+    "orange": (255, 113, 0, 0.5, "black"),
+    "yellow": (255, 221, 0, 0.5, "black"),
+    "dark yellow": (190, 174, 0, 0.5, "black"),
+    "brown": (129, 100, 51, 0.5, "black"),
+    "silver": (224, 224, 224, 0.5, "black"),
+    "light green": (17, 255, 0, 0.5, "black"),
+    "dark green": (9, 97, 0, 0.5, "black"),
+    "turquoise": (0, 255, 206, 0.5, "black"),
+    "light blue": (0, 237, 255, 0.5, "black"),
+    "bright blue": (0, 32, 255, 0.5, "black"),
+    "dark blue": (0, 32, 255, 0.5, "black"),
+    "navy blue": (0, 25, 119, 0.5, "black"),
+    "dark purple": (164, 49, 172, 0.6, "black"),
+    "light purple": (196, 125, 255, 0.3, "black"),
+    "bright pink": (255, 0, 207, 0.5, "black"),
+    "light pink": (249, 212, 234, 0.4, "black"),
+    "pale pink": (249, 212, 234, 0.4, "black"),
+    "wine": (202, 78, 78, 0.5, "black"),
+    "lime": (193, 227, 71, 0.5, "black"),
+    "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)")
 }
 SAVED_COLORS_FILE = "speaker_colors.json"
-PROGRESS_FILE = "progress.json"
+PROGRESS_FILE = "progress.json"  # File to store auto-saved progress
 
 def normalize_text(text):
     text = text.replace("\u00A0", " ")
@@ -127,9 +120,17 @@ def match_normalize(text):
     return text.replace("’", "'").replace("‘", "'")
 
 def normalize_speaker_name(name):
+    # Replace typographic apostrophes with straight ones, remove periods, lowercase, and trim.
     return name.replace("’", "'").replace("‘", "'").replace(".", "").lower().strip()
 
 def smart_title(name):
+    """
+    Returns a normalized title for a speaker name.
+    Each word is capitalized (first letter uppercase, rest lowercase),
+    except that words in the exceptions (ps, pc, ds, di, dci) are forced to uppercase.
+    Additionally, if the name ends with a parenthesized letter (e.g., "(m)" or "(f)"),
+    that letter is forced to uppercase.
+    """
     words = name.split()
     if not words:
         return name
@@ -154,6 +155,7 @@ def write_file_atomic(filepath, lines):
 # Auto-Save & Auto-Load Functions
 # ---------------------------
 def auto_save():
+    # Save additional variables "book_name" and "existing_speaker_colors"
     data = {
         "step": st.session_state.get("step", 1),
         "quotes_lines": st.session_state.get("quotes_lines"),
@@ -173,9 +175,9 @@ def auto_save():
             json.dump(st.session_state.speaker_colors, f, indent=4, ensure_ascii=False)
     if st.session_state.get("quotes_lines") and st.session_state.get("book_name"):
         quotes_filename = f"{st.session_state.book_name}-quotes.txt"
-        # Join with an explicit newline separator.
         with open(quotes_filename, "w", encoding="utf-8") as f:
-            f.write("\n".join(line.rstrip("\n") for line in st.session_state.quotes_lines) + "\n")
+            quotes_text = "".join(st.session_state.quotes_lines)
+            f.write(quotes_text)
 
 def auto_load():
     if os.path.exists(PROGRESS_FILE):
@@ -192,6 +194,9 @@ def auto_load():
                 tmp_docx.write(docx_bytes)
                 st.session_state.docx_path = tmp_docx.name
 
+# ---------------------------
+# Load Saved Progress Button
+# ---------------------------
 if os.path.exists(PROGRESS_FILE):
     if st.button("Load Saved Progress"):
          auto_load()
@@ -289,6 +294,7 @@ def create_marker_docx(original_docx, marker_docx):
         marker = f"[[[P{idx}]]]"
         prepend_marker_to_paragraph(para, marker)
     doc.save(marker_docx)
+    # "Marker DOCX created." message removed.
 
 def convert_docx_to_html_mammoth(docx_file):
     with open(docx_file, "rb") as f:
@@ -424,24 +430,21 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
     candidate_info = build_candidate_info(soup)
     unmatched_quotes = []
     last_global_offset = 0
+
     for quote_data in quotes_list:
         expected_quote = quote_data['quote'].strip('“”"')
         expected_quote_lower = match_normalize(expected_quote).lower()
+
         speaker = quote_data['speaker']
-        norm_speaker = normalize_speaker_name(speaker)
-        # Special handling for 'unknown' and 'error'
-        if norm_speaker == "unknown":
+        color_choice = speaker_colors.get(speaker, "none")
+        if speaker.lower() == "unknown":
             color_choice = "none"
-            rgba = COLOR_PALETTE.get("none", COLOR_PALETTE["none"])
-            highlight_style = f"color: {rgba[4]}; background-color: transparent;"
-        elif norm_speaker == "error":
-            color_choice = "error"
-            rgba = COLOR_PALETTE.get("error", COLOR_PALETTE["none"])
-            highlight_style = "background-color: transparent;"
+        rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
+        if color_choice == "none":
+            highlight_style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
         else:
-            color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
-            rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
             highlight_style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
+            
         matched = False
         for candidate, start, end, text in candidate_info:
             if end < last_global_offset:
@@ -467,7 +470,13 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
                         matched = True
                         break
         if not matched:
-            st.write(f"⚠️ Could not match: {quote_data['speaker']}: \"{quote_data['quote']}\"")
+            unmatched_quotes.append(f"{quote_data['speaker']}: \"{quote_data['quote']}\" [Index: {quote_data['index']}]")
+    
+    if unmatched_quotes:
+        with open("unmatched_quotes.txt", "w", encoding="utf-8") as f:
+            f.write("\n".join(unmatched_quotes))
+        st.write(f"⚠️ Unmatched quotes saved to 'unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
+    
     return str(soup)
 
 def apply_manual_indentation_with_markers(original_docx, html):
@@ -502,14 +511,13 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
     counts = Counter(quote["speaker"] for quote in quotes_list)
     total_lines = sum(counts.values())
     summary_order = []
-    # Skip "Unknown" and "Error" from summary list.
     if "Unknown" in counts:
         summary_order.append("Unknown")
     for sp in speakers:
-        if sp != "Unknown" and normalize_speaker_name(sp) != "error" and sp not in summary_order:
+        if sp != "Unknown" and sp not in summary_order:
             summary_order.append(sp)
     for sp in counts:
-        if normalize_speaker_name(sp) != "error" and sp not in summary_order:
+        if sp not in summary_order:
             summary_order.append(sp)
     lines = []
     lines.append('<div id="character-summary" style="border: 1px solid #ccc; padding: 10px; margin-bottom: 20px;">')
@@ -517,40 +525,35 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
     for sp in summary_order:
         count = counts.get(sp, 0)
         percentage = round((count / total_lines) * 100) if total_lines > 0 else 0
-        norm_sp = normalize_speaker_name(sp)
-        if norm_sp in ["unknown", "error"]:
-            color_key = "none" if norm_sp=="unknown" else "error"
-        else:
-            color_key = speaker_colors.get(norm_sp, "none")
+        color_key = speaker_colors.get(sp, "none")
+        if sp.lower() == "unknown":
+            color_key = "none"
         rgba = COLOR_PALETTE.get(color_key, COLOR_PALETTE["none"])
         if color_key == "none":
             style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
-        elif color_key == "error":
-            style = "background-color: transparent;"
         else:
             style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 8px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
+        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 5px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
     lines.append('</div>')
     return "\n".join(lines)
 
 def generate_ranking_html(quotes_list, speaker_colors):
     counts = Counter(quote["speaker"] for quote in quotes_list)
     total_lines = sum(counts.values())
-    filtered = [(sp, count) for sp, count in counts.items() if sp.lower() != "unknown" and normalize_speaker_name(sp) != "error" and count > 1]
+    filtered = [(sp, count) for sp, count in counts.items() if sp.lower() != "unknown" and count > 1]
     filtered.sort(key=lambda x: x[1], reverse=True)
     lines = []
     lines.append('<div id="speaker-ranking" style="margin-top: 20px;">')
     lines.append('<h2 style="margin: 0 0 5px 0;">Speaker Ranking</h2>')
     for sp, count in filtered:
         percentage = round((count / total_lines) * 100) if total_lines > 0 else 0
-        norm_sp = normalize_speaker_name(sp)
-        color_key = speaker_colors.get(norm_sp, "none")
+        color_key = speaker_colors.get(sp, "none")
         rgba = COLOR_PALETTE.get(color_key, COLOR_PALETTE["none"])
-        if color_key in ["none", "error"]:
-            style = "background-color: transparent;"
+        if color_key == "none":
+            style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
         else:
             style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 8px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
+        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 5px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
     lines.append('</div>')
     return "\n".join(lines)
 
@@ -565,15 +568,15 @@ def get_canonical_speakers(quotes_file):
             match = pattern.match(line.strip())
             if match:
                 speaker_raw = match.group(1).strip()
-                speakers.append(smart_title(str(speaker_raw)))
+                speakers.append(smart_title(speaker_raw))
     seen = set()
     canonical_speakers = []
     for s in speakers:
-        norm = normalize_speaker_name(str(s))
+        norm = normalize_speaker_name(s)
         if norm not in seen:
             seen.add(norm)
             canonical_speakers.append(s)
-    canonical_map = {normalize_speaker_name(str(s)): s for s in canonical_speakers}
+    canonical_map = {normalize_speaker_name(s): s for s in canonical_speakers}
     return canonical_speakers, canonical_map
 
 def load_quotes(quotes_file, canonical_map):
@@ -597,11 +600,8 @@ def load_quotes(quotes_file, canonical_map):
 def load_existing_colors():
     if os.path.exists(SAVED_COLORS_FILE):
         with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
-            loaded_colors = json.load(f)
-        normalized_loaded = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
-        st.session_state.speaker_colors = normalized_loaded
-        st.session_state.existing_speaker_colors = normalized_loaded
-        return normalized_loaded
+            colors = json.load(f)
+        return {normalize_speaker_name(k): v for k, v in colors.items()}
     return {}
 
 def save_speaker_colors(speaker_colors):
@@ -609,7 +609,7 @@ def save_speaker_colors(speaker_colors):
         json.dump(speaker_colors, f, indent=4, ensure_ascii=False)
 
 # ---------------------------
-# Restart Helper Function
+# Restart Helper Function (for DOCX-only branch of Step 1)
 # ---------------------------
 def restart_app():
     st.session_state.clear()
@@ -686,11 +686,7 @@ if st.session_state.step == 1:
                 if speaker_colors_file is not None:
                     raw = json.load(speaker_colors_file)
                     st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
-                    save_speaker_colors(st.session_state.existing_speaker_colors)
                 else:
-                    # For a new document, if no speaker_colors_file is provided, delete any existing saved file.
-                    if os.path.exists(SAVED_COLORS_FILE):
-                        os.remove(SAVED_COLORS_FILE)
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
                 st.session_state.console_log = []
@@ -802,103 +798,106 @@ elif st.session_state.step == 2:
 elif st.session_state.step == 3:
     st.markdown("<h4>Step 3: Speaker Color Assignment</h4>", unsafe_allow_html=True)
     st.write("Assign highlight colors for speakers that do not yet have an assigned color. You can also click 'Edit Speaker Colors' to review and change all assignments.")
-    # Load the canonical speakers.
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
-    # Load existing colors (or default to empty dict)
-    existing_colors = st.session_state.get("existing_speaker_colors") or load_existing_colors() or {}
+    # Load existing colors (if any)
+    existing_colors = st.session_state.existing_speaker_colors if "existing_speaker_colors" in st.session_state else load_existing_colors()
     
-    # Determine which speakers need a new assignment, skipping "unknown" and "error"
-    speakers_to_assign = [
-        sp for sp in canonical_speakers 
-        if normalize_speaker_name(sp) not in ["unknown", "error"] and (normalize_speaker_name(sp) not in existing_colors or existing_colors.get(normalize_speaker_name(sp), "none") == "none")
-    ]
+    # Filter speakers (exclude "Unknown") that have not been assigned a color (or are still "none")
+    speakers_to_assign = [sp for sp in canonical_speakers if sp.lower() != "unknown" and (normalize_speaker_name(sp) not in existing_colors or existing_colors[normalize_speaker_name(sp)] == "none")]
     
     if speakers_to_assign:
         st.write("Assign colors to the following speakers:")
-        color_options = [color.title() for color in COLOR_PALETTE.keys()]
-        updated_colors = {}
-        for sp in speakers_to_assign:
-            norm = normalize_speaker_name(sp)
-            default_color = existing_colors.get(norm, "none")
-            try:
-                default_index = color_options.index(default_color.title())
-            except ValueError:
-                default_index = color_options.index("None")
-            selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+norm)
-            updated_colors[norm] = selected.lower()
-        # Merge updated colors with any already assigned values.
-        for norm, col in updated_colors.items():
-            existing_colors[norm] = col
-        # Build final dictionary using normalized keys.
-        final_colors = {}
-        for sp in canonical_speakers:
-            norm = normalize_speaker_name(sp)
-            if norm in ["unknown", "error"]:
-                final_colors[norm] = "none" if norm=="unknown" else "error"
-            else:
-                final_colors[norm] = existing_colors.get(norm, "none")
-        st.session_state.speaker_colors = final_colors
-        st.session_state.existing_speaker_colors = existing_colors.copy()
-        save_speaker_colors(final_colors)
-        st.success("Speaker colors updated.")
+        with st.form("color_assignment_form"):
+            new_speaker_colors = {}
+            color_options = [color.title() for color in COLOR_PALETTE.keys()]
+            for sp in speakers_to_assign:
+                norm = normalize_speaker_name(sp)
+                default_color = existing_colors.get(norm, "none")
+                try:
+                    default_index = color_options.index(default_color.title())
+                except ValueError:
+                    default_index = color_options.index("None")
+                selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+sp)
+                new_speaker_colors[sp] = selected.lower()
+            form_submitted = st.form_submit_button("Submit Colors")
+            if form_submitted:
+                # Update existing_colors for these speakers
+                for sp, col in new_speaker_colors.items():
+                    norm = normalize_speaker_name(sp)
+                    existing_colors[norm] = col
+                # Create a combined dictionary for all speakers (use existing assignments if present)
+                updated_colors = {}
+                for sp in canonical_speakers:
+                    norm = normalize_speaker_name(sp)
+                    if sp.lower() == "unknown":
+                        updated_colors[sp] = "none"
+                    else:
+                        updated_colors[sp] = existing_colors.get(norm, "none")
+                st.session_state.speaker_colors = updated_colors
+                st.session_state.existing_speaker_colors = updated_colors
+                save_speaker_colors(updated_colors)
+                st.success("Colors assigned for new speakers.")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Continue"):
+                st.session_state.step = 4
+                auto_save()
+                st.rerun()
+        with col2:
+            if st.button("Edit Speaker Colors"):
+                st.session_state.step = "edit_colors"
+                auto_save()
+                st.rerun()
     else:
         st.write("All speakers already have assigned colors.")
-        if os.path.exists(SAVED_COLORS_FILE):
-            with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
-                loaded = json.load(f)
-            st.session_state.speaker_colors = loaded
-            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in loaded.items()}
-        else:
-            st.session_state.speaker_colors = {}
-            st.session_state.existing_speaker_colors = {}
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Continue"):
-            st.session_state.step = 4
-            auto_save()
-            st.rerun()
-    with col2:
-        if st.button("Edit Speaker Colors"):
-            if os.path.exists(SAVED_COLORS_FILE):
-                with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
-                    loaded = json.load(f)
-                st.session_state.speaker_colors = loaded
-                st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in loaded.items()}
-            st.session_state.step = "edit_colors"
-            auto_save()
-            st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Continue"):
+                st.session_state.step = 4
+                auto_save()
+                st.rerun()
+        with col2:
+            if st.button("Edit Speaker Colors"):
+                st.session_state.step = "edit_colors"
+                auto_save()
+                st.rerun()
 
 # ========= EDIT COLORS: Full Speaker Color Assignment =========
 elif st.session_state.step == "edit_colors":
     st.markdown("<h4>Edit Speaker Colors</h4>", unsafe_allow_html=True)
-    st.write("Edit the assigned colors for all speakers (excluding 'Unknown'):")
+    st.write("Edit the assigned colors for all speakers:")
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
         tmp_quotes.write("".join(st.session_state.quotes_lines))
         tmp_quotes_path = tmp_quotes.name
     canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
     st.session_state.canonical_map = canonical_map
-    existing_colors = st.session_state.get("speaker_colors") or load_existing_colors() or {}
-    updated_colors = existing_colors.copy()
-    color_options = [color.title() for color in COLOR_PALETTE.keys()]
-    for sp in canonical_speakers:
-        if normalize_speaker_name(sp) == "unknown":
-            continue
-        norm = normalize_speaker_name(sp)
-        default_color = existing_colors.get(norm, "none")
-        try:
-            default_index = color_options.index(default_color.title())
-        except ValueError:
-            default_index = color_options.index("None")
-        selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+norm)
-        updated_colors[norm] = selected.lower()
-    st.session_state.speaker_colors = updated_colors
-    st.session_state.existing_speaker_colors = updated_colors.copy()
-    save_speaker_colors(updated_colors)
-    st.success("Speaker colors updated.")
+    existing_colors = st.session_state.speaker_colors if "speaker_colors" in st.session_state else load_existing_colors()
+    with st.form("edit_color_form"):
+        full_speaker_colors = {}
+        color_options = [color.title() for color in COLOR_PALETTE.keys()]
+        for sp in canonical_speakers:
+            if sp.lower() == "unknown":
+                full_speaker_colors[sp] = "none"
+                st.write(f"{sp}: none")
+            else:
+                norm = normalize_speaker_name(sp)
+                default_color = existing_colors.get(norm, "none")
+                try:
+                    default_index = color_options.index(default_color.title())
+                except ValueError:
+                    default_index = color_options.index("None")
+                selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+sp)
+                full_speaker_colors[sp] = selected.lower()
+        submitted = st.form_submit_button("Submit Edited Colors")
+        if submitted:
+            st.session_state.speaker_colors = full_speaker_colors
+            st.session_state.existing_speaker_colors = full_speaker_colors
+            save_speaker_colors(full_speaker_colors)
+            st.success("Speaker colors updated.")
     if st.button("Continue"):
         st.session_state.step = 4
         auto_save()
@@ -906,12 +905,9 @@ elif st.session_state.step == "edit_colors":
 
 # ========= STEP 4: Final HTML Generation =========
 elif st.session_state.step == 4:
-    if "speaker_colors" not in st.session_state or st.session_state.speaker_colors is None:
-        st.session_state.speaker_colors = load_existing_colors() or {}
     st.markdown("<h4>Step 4: Final HTML Generation</h4>", unsafe_allow_html=True)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
-        # Use explicit newline join to ensure every line ends with a newline.
-        tmp_quotes.write("\n".join(line.rstrip("\n") for line in st.session_state.quotes_lines) + "\n")
+        tmp_quotes.write("".join(st.session_state.quotes_lines))
         quotes_file_path = tmp_quotes.name
     with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_marker:
         marker_docx_path = tmp_marker.name
@@ -919,54 +915,7 @@ elif st.session_state.step == 4:
     html = convert_docx_to_html_mammoth(marker_docx_path)
     os.remove(marker_docx_path)
     quotes_list = load_quotes(quotes_file_path, st.session_state.canonical_map)
-    # Highlighting loop with special handling for "unknown" and "error"
-    soup = BeautifulSoup(html, "html.parser")
-    candidate_info = build_candidate_info(soup)
-    last_global_offset = 0
-    for quote_data in quotes_list:
-        expected_quote = quote_data['quote'].strip('“”"')
-        expected_quote_lower = match_normalize(expected_quote).lower()
-        speaker = quote_data['speaker']
-        norm_speaker = normalize_speaker_name(speaker)
-        if norm_speaker == "unknown":
-            color_choice = "none"
-            rgba = COLOR_PALETTE.get("none", COLOR_PALETTE["none"])
-            highlight_style = f"color: {rgba[4]}; background-color: transparent;"
-        elif norm_speaker == "error":
-            color_choice = "error"
-            rgba = COLOR_PALETTE.get("error", COLOR_PALETTE["none"])
-            highlight_style = "background-color: transparent;"
-        else:
-            color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
-            rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
-            highlight_style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-        matched = False
-        for candidate, start, end, text in candidate_info:
-            if end < last_global_offset:
-                continue
-            local_start = last_global_offset - start if last_global_offset > start else 0
-            candidate_text_norm = match_normalize(text).lower()
-            pos = candidate_text_norm.find(expected_quote_lower, local_start)
-            if pos != -1:
-                match_end_local = highlight_in_candidate(candidate, quote_data['quote'], highlight_style, soup, local_start)
-                if match_end_local is not None:
-                    last_global_offset = start + match_end_local
-                    matched = True
-                    break
-        if not matched:
-            for candidate, start, end, text in candidate_info:
-                candidate_text_norm = match_normalize(text).lower()
-                pos = candidate_text_norm.find(expected_quote_lower)
-                if pos != -1:
-                    match_end_local = highlight_in_candidate(candidate, quote_data['quote'], highlight_style, soup, 0)
-                    if match_end_local is not None:
-                        if start + match_end_local > last_global_offset:
-                            last_global_offset = start + match_end_local
-                        matched = True
-                        break
-        if not matched:
-            st.write(f"⚠️ Could not match: {quote_data['speaker']}: \"{quote_data['quote']}\"")
-    highlighted_html = str(soup)
+    highlighted_html = highlight_dialogue_in_html(html, quotes_list, st.session_state.speaker_colors)
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
     ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
@@ -989,7 +938,7 @@ elif st.session_state.step == 4:
     }}
     span.highlight {{
       background-color: var(--highlight-color, transparent);
-      padding: 0.33em 0px;
+      padding: 0.15em 0px;
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
     }}
