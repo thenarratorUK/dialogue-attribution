@@ -96,30 +96,32 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # ---------------------------
 # Global Constants & Helper Functions
 # ---------------------------
+
 COLOR_PALETTE = {
-    "dark grey": (67, 62, 63, 0.5, "black"),
-    "burgundy": (134, 8, 0, 0.5, "black"),
-    "red": (255, 10, 0, 0.5, "black"),
-    "orange": (255, 113, 0, 0.5, "black"),
-    "yellow": (255, 221, 0, 0.5, "black"),
-    "dark yellow": (190, 174, 0, 0.5, "black"),
-    "brown": (129, 100, 51, 0.5, "black"),
-    "silver": (224, 224, 224, 0.5, "black"),
-    "light green": (17, 255, 0, 0.5, "black"),
-    "dark green": (9, 97, 0, 0.5, "black"),
-    "turquoise": (0, 255, 206, 0.5, "black"),
-    "light blue": (0, 237, 255, 0.5, "black"),
-    "bright blue": (0, 32, 255, 0.5, "black"),
-    "dark blue": (0, 32, 255, 0.5, "black"),
-    "navy blue": (0, 25, 119, 0.5, "black"),
-    "dark purple": (164, 49, 172, 0.6, "black"),
-    "light purple": (196, 125, 255, 0.3, "black"),
-    "bright pink": (255, 0, 207, 0.5, "black"),
-    "light pink": (249, 212, 234, 0.4, "black"),
-    "pale pink": (249, 212, 234, 0.4, "black"),
-    "wine": (202, 78, 78, 0.5, "black"),
-    "lime": (193, 227, 71, 0.5, "black"),
-    "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)")
+    "dark grey": (180, 178, 179, 1, "rgb(30, 28, 29)"),
+    "burgundy": (207, 156, 153, 1, "rgb(55, 4, 1)"),
+    "red": (255, 153, 153, 1, "rgb(107, 9, 6)"),
+    "orange": (255, 198, 153, 1, "rgb(119, 62, 17)"),
+    "yellow": (255, 241, 153, 1, "rgb(107, 93, 5)"),
+    "dark yellow": (230, 223, 153, 1, "rgb(78, 71, 1)"),
+    "brown": (205, 192, 173, 1, "rgb(61, 48, 29)"),
+    "silver": (243, 243, 243, 1, "rgb(96, 96, 96)"),
+    "light green": (160, 255, 153, 1, "rgb(20, 115, 13)"),
+    "dark green": (157, 192, 152, 1, "rgb(7, 42, 2)"),
+    "turquoise": (153, 255, 234, 1, "rgb(3, 105, 84)"),
+    "light blue": (153, 248, 254, 1, "rgb(9, 104, 110)"),
+    "bright blue": (152, 166, 255, 1, "rgb(4, 18, 107)"),
+    "dark blue": (152, 166, 255, 1, "rgb(4, 18, 107)"),
+    "navy blue": (153, 162, 201, 1, "rgb(4, 13, 52)"),
+    "dark purple": (219, 173, 222, 1, "rgb(68, 22, 71)"),
+    "light purple": (231, 203, 254, 1, "rgb(81, 53, 104)"),
+    "bright pink": (255, 153, 236, 1, "rgb(112, 10, 93)"),
+    "light pink": (254, 238, 248, 1, "rgb(103, 87, 97)"),
+    "pale pink": (254, 238, 248, 1, "rgb(103, 87, 97)"),
+    "wine": (234, 184, 185, 1, "rgb(90, 40, 41)"),
+    "lime": (230, 244, 182, 1, "rgb(81, 95, 33)"),
+    "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)"),
+    "error": (0, 0, 0, 0, "")  # For "Error": transparent background, no text color override.
 }
 SAVED_COLORS_FILE = "speaker_colors.json"
 PROGRESS_FILE = "progress.json"
@@ -533,7 +535,7 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
             style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
         else:
             style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 5px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
+        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 8px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
     lines.append('</div>')
     return "\n".join(lines)
 
@@ -553,7 +555,7 @@ def generate_ranking_html(quotes_list, speaker_colors):
             style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
         else:
             style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 5px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
+        lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 8px 0;"><span class="highlight" style="{style}">{sp}</span> - {count} lines - {percentage}%</p>')
     lines.append('</div>')
     return "\n".join(lines)
 
@@ -940,7 +942,7 @@ elif st.session_state.step == 4:
     }}
     span.highlight {{
       background-color: var(--highlight-color, transparent);
-      padding: 0.15em 0px;
+      padding: 0.33em 0px;
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
     }}
