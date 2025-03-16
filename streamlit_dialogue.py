@@ -85,6 +85,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 # Global Constants & Helper Functions
 # ---------------------------
 # Updated COLOR_PALETTE: Added an "error" key.
+
 COLOR_PALETTE = {
     "dark grey": (180, 178, 179, 1, "rgb(30, 28, 29)"),
     "burgundy": (207, 156, 153, 1, "rgb(55, 4, 1)"),
@@ -770,29 +771,25 @@ elif st.session_state.step == 2:
                 st.session_state.console_log.insert(0, f"Skipped line {index+1}.")
                 st.session_state.unknown_index = index + 1
             elif new_speaker.lower() == "undo":
-                # Restore the previous version if available
-                if "quotes_versions" in st.session_state and st.session_state.quotes_versions[1] is not None:
-                    st.session_state.quotes_lines = st.session_state.quotes_versions[1].copy()
-                    st.session_state.console_log.insert(0, "Undid last change.")
+                if "last_update" in st.session_state:
+                    last_index = st.session_state.last_update[0]
+                    pattern = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]+)(:.*)$")
+                    m = pattern.match(st.session_state.quotes_lines[last_index])
+                    if m:
+                        prefix_u, _, remainder_u = m.groups()
+                        st.session_state.quotes_lines[last_index] = prefix_u + "Unknown" + remainder_u
+                        st.session_state.unknown_index = last_index
+                        st.session_state.console_log.insert(0, f"Reverted line {last_index+1} to Unknown.")
+                    del st.session_state.last_update
                 else:
                     st.session_state.console_log.insert(0, "Nothing to undo.")
             else:
-                # On a normal edit, update the speaker name and shift versions so only three snapshots are kept.
-                # Initialize versioning if not already done.
-                if "quotes_versions" not in st.session_state:
-                    st.session_state.quotes_versions = [None, None, st.session_state.quotes_lines.copy()]
                 st.session_state.last_update = (index, st.session_state.quotes_lines[index])
                 updated_speaker = smart_title(new_speaker)
                 new_line = prefix + updated_speaker + remainder
                 if not new_line.endswith("\n"):
                     new_line += "\n"
                 st.session_state.quotes_lines[index] = new_line
-                # Shift versions: the oldest is dropped, previous becomes undo, current becomes previous, and the new version is stored.
-                st.session_state.quotes_versions = [
-                    st.session_state.quotes_versions[1],
-                    st.session_state.quotes_versions[2],
-                    st.session_state.quotes_lines.copy()
-                ]
                 st.session_state.console_log.insert(0, f"Updated line {index+1} with speaker: {updated_speaker}")
                 st.session_state.unknown_index = index + 1
             st.session_state.new_speaker_input = ""
@@ -942,7 +939,7 @@ elif st.session_state.step == 4:
         else:
             color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
             rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
-            highlight_style = f"color: {str(rgba[4])}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
+            highlight_style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
         matched = False
         for candidate, start, end, text in candidate_info:
             if end < last_global_offset:
