@@ -14,7 +14,24 @@ from collections import Counter
 # Import components for HTML embedding.
 import streamlit.components.v1 as components
 
-REFRESH_EVERY = 30
+REFRESH_EVERY = 5
+
+# ---- handle pending refresh ----------------------------------------
+if st.session_state.get("pending_refresh", False):
+    # Keys we must keep so Step 2 resumes instantly
+    keep_keys = {
+        "book_name",            # your title
+        "docx_path",            # temp file we rebuilt earlier
+        "unknown_speakers",     # remaining lines
+        "step",                 # current UI step
+    }
+
+    preserved = {k: st.session_state[k] for k in keep_keys if k in st.session_state}
+    st.session_state.clear()            # drop the bulky / growing stuff
+    st.session_state.update(preserved)
+    st.session_state.pending_refresh = False
+    st.rerun()             # safe here – we're *not* in a callback
+# --------------------------------------------------------------------
 
 # Inject custom CSS
 custom_css = """
@@ -799,12 +816,7 @@ elif st.session_state.step == 2:
             st.session_state.setdefault("edit_counter", 0)
             st.session_state.edit_counter += 1
             if st.session_state.edit_counter % REFRESH_EVERY == 0:
-                auto_save()                         # ensure nothing is lost
-                keep = {"book_name", "docx_path", "step"}
-                slim = {k: st.session_state[k] for k in keep if k in st.session_state}
-                st.session_state.clear()            # drop growing stuff
-                st.session_state.update(slim)
-                st.rerun()
+                st.session_state.pending_refresh = True
         
         st.text_input("Enter speaker name (or 'skip'/'exit'/'undo'):", key="new_speaker_input", on_change=process_unknown_input)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
