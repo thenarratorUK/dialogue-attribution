@@ -178,7 +178,6 @@ def auto_save():
     }
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
-        del st.session_state["docx_bytes"]
     with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
     if st.session_state.get("speaker_colors") is not None:
@@ -198,13 +197,12 @@ def auto_load():
             st.session_state[key] = value
         if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
-        if "docx_bytes" in data and "docx_path" not in st.session_state:
-            st.session_state.docx_bytes = base64.b64decode(data["docx_bytes"])
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
-            tmp.write(st.session_state.docx_bytes)
-            tmp.flush()
-            st.session_state.docx_path = tmp.name
-            del st.session_state["docx_bytes"] 
+        if "docx_bytes" in st.session_state:
+            docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
+            st.session_state.docx_bytes = docx_bytes
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
+                tmp_docx.write(docx_bytes)
+                st.session_state.docx_path = tmp_docx.name
 
 if os.path.exists(PROGRESS_FILE):
     if st.button("Load Saved Progress"):
@@ -701,8 +699,6 @@ if st.session_state.step == 1:
                 else:
                     st.session_state.step = 2
                 auto_save()
-                if "docx_bytes" in st.session_state:
-                    del st.session_state["docx_bytes"]
                 st.rerun()
 
 # ========= STEP 2: Unknown Speaker Processing =========
@@ -767,9 +763,6 @@ elif st.session_state.step == 2:
         st.write(f"**Dialogue (Line {index+1}):** {dialogue}")
         
         def process_unknown_input():
-            MAX_LOG = 60
-            if "console_log" in st.session_state:
-                st.session_state.console_log = st.session_state.console_log[:MAX_LOG]
             new_speaker = st.session_state.new_speaker_input.strip()
             if new_speaker.lower() == "exit":
                 st.session_state.console_log.insert(0, "Exiting unknown speaker processing.")
