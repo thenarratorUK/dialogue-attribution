@@ -16,14 +16,6 @@ import streamlit.components.v1 as components
 
 REFRESH_EVERY = 5
 
-# ---- handle pending refresh ----------------------------------------
-if st.session_state.get("pending_refresh", False):
-    st.session_state.pending_refresh = False
-    st.session_state.clear()
-    auto_load()
-    st.rerun()             # safe here – we're *not* in a callback
-# --------------------------------------------------------------------
-
 # Inject custom CSS
 custom_css = """
 <style>
@@ -218,6 +210,14 @@ if os.path.exists(PROGRESS_FILE):
     if st.button("Load Saved Progress"):
          auto_load()
          st.rerun()
+
+# ---- handle pending refresh ----------------------------------------
+if st.session_state.get("pending_refresh", False):
+    st.session_state.pending_refresh = False
+    st.session_state.clear()
+    auto_load()
+    st.rerun()             # safe here – we're *not* in a callback
+# --------------------------------------------------------------------
 
 # ---------------------------
 # Alternative Extraction Functions
