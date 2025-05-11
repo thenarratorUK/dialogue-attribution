@@ -14,7 +14,7 @@ from collections import Counter
 # Import components for HTML embedding.
 import streamlit.components.v1 as components
 
-REFRESH_EVERY = 5
+REFRESH_EVERY = 1
 
 # Inject custom CSS
 custom_css = """
