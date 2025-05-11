@@ -216,6 +216,7 @@ if st.session_state.get("pending_refresh", False):
     st.session_state.pending_refresh = False
     st.session_state.clear()
     auto_load()
+    st.session_state["new_speaker_input"] = ""
     st.rerun()             # safe here – we're *not* in a callback
 # --------------------------------------------------------------------
 
