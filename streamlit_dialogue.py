@@ -17,19 +17,10 @@ import streamlit.components.v1 as components
 REFRESH_EVERY = 5
 
 # ---- handle pending refresh ----------------------------------------
-if st.session_state.get("pending_refresh", False):
-    # Keys we must keep so Step 2 resumes instantly
-    keep_keys = {
-        "book_name",            # your title
-        "docx_path",            # temp file we rebuilt earlier
-        "unknown_speakers",     # remaining lines
-        "step",                 # current UI step
-    }
-
-    preserved = {k: st.session_state[k] for k in keep_keys if k in st.session_state}
-    st.session_state.clear()            # drop the bulky / growing stuff
-    st.session_state.update(preserved)
+if st.session_state.get("pending_refresh", 
     st.session_state.pending_refresh = False
+    st.session_state.clear()
+    auto_load()
     st.rerun()             # safe here – we're *not* in a callback
 # --------------------------------------------------------------------
 
