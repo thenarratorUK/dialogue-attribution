@@ -808,7 +808,7 @@ elif st.session_state.step == 2:
             if submitted:
                 st.session_state.new_speaker_input = new_name  # keep existing API
                 process_unknown_input()
-        st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
+            st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
 # ========= STEP 3: Speaker Color Assignment =========
 elif st.session_state.step == 3:
