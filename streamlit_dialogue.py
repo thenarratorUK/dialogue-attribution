@@ -793,6 +793,7 @@ elif st.session_state.step == 2:
                 st.session_state.console_log.insert(0, f"Updated line {index+1} with speaker: {updated_speaker}")
                 st.session_state.unknown_index = index + 1
             auto_save()
+            st.rerun()
         
         # --- New: one‑submit‑per‑name form -------------------------------
         with st.form("unknown_form", clear_on_submit=True):
@@ -806,7 +807,6 @@ elif st.session_state.step == 2:
 # Runs only once per finished answer (zero reruns while typing)
         if submitted:
             process_unknown_input(new_name)
-            st.rerun()
 
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
