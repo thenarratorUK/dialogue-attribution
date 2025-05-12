@@ -798,9 +798,9 @@ elif st.session_state.step == 2:
         # --- New: one‑submit‑per‑name form -------------------------------
         with st.form("unknown_form", clear_on_submit=True):
             new_name = st.text_input(
-            "Enter speaker name (or 'skip'/'exit'/'undo'):",
-            key="new_speaker_input",
-            placeholder="Type name and press Enter",
+                "Enter speaker name (or 'skip'/'exit'/'undo'):",
+                key="new_speaker_input",
+                placeholder="Type name and press Enter",
         )
         submitted = st.form_submit_button("Submit")  # Enter inside box triggers this
 
