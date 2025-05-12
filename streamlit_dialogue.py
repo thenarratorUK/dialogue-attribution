@@ -796,19 +796,19 @@ elif st.session_state.step == 2:
             auto_save()
         
         # --- New: one‑submit‑per‑name form -------------------------------
-            with st.form("unknown_form", clear_on_submit=True):
-                new_name = st.text_input(
-                    "Enter speaker name (or 'skip'/'exit'/'undo'):",
-                    key="new_speaker_input",
-                    placeholder="Type name and press Enter",
-                )
-                submitted = st.form_submit_button("Submit")  # Enter inside box triggers this
+        with st.form("unknown_form", clear_on_submit=True):
+            new_name = st.text_input(
+            "Enter speaker name (or 'skip'/'exit'/'undo'):",
+            key="new_speaker_input",
+            placeholder="Type name and press Enter",
+        )
+        submitted = st.form_submit_button("Submit")  # Enter inside box triggers this
 
 # Runs only once per finished answer (zero reruns while typing)
-            if submitted:
-                st.session_state.new_speaker_input = new_name  # keep existing API
-                process_unknown_input()
-            st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
+        if submitted:
+            st.session_state.new_speaker_input = new_name  # keep existing API
+            process_unknown_input()
+        st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
 # ========= STEP 3: Speaker Color Assignment =========
 elif st.session_state.step == 3:
