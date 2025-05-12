@@ -14,8 +14,6 @@ from collections import Counter
 # Import components for HTML embedding.
 import streamlit.components.v1 as components
 
-REFRESH_EVERY = 1
-
 # Inject custom CSS
 custom_css = """
 <style>
@@ -210,15 +208,6 @@ if os.path.exists(PROGRESS_FILE):
     if st.button("Load Saved Progress"):
          auto_load()
          st.rerun()
-
-# ---- handle pending refresh ----------------------------------------
-if st.session_state.get("pending_refresh", False):
-    st.session_state.pending_refresh = False
-    st.session_state.clear()
-    auto_load()
-    st.session_state["new_speaker_input"] = ""
-    st.rerun()             # safe here – we're *not* in a callback
-# --------------------------------------------------------------------
 
 # ---------------------------
 # Alternative Extraction Functions
@@ -805,10 +794,6 @@ elif st.session_state.step == 2:
                 st.session_state.unknown_index = index + 1
             st.session_state.new_speaker_input = ""
             auto_save()
-            st.session_state.setdefault("edit_counter", 0)
-            st.session_state.edit_counter += 1
-            if st.session_state.edit_counter % REFRESH_EVERY == 0:
-                st.session_state.pending_refresh = True
         
         st.text_input("Enter speaker name (or 'skip'/'exit'/'undo'):", key="new_speaker_input", on_change=process_unknown_input)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
