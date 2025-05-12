@@ -762,8 +762,8 @@ elif st.session_state.step == 2:
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
         st.write(f"**Dialogue (Line {index+1}):** {dialogue}")
         
-        def process_unknown_input():
-            new_speaker = st.session_state.new_speaker_input.strip()
+        def process_unknown_input(new_speaker: str):
+            new_speaker = new_speaker.strip()
             if new_speaker.lower() == "exit":
                 st.session_state.console_log.insert(0, "Exiting unknown speaker processing.")
                 st.session_state.step = 3
