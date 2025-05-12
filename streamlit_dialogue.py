@@ -806,6 +806,8 @@ elif st.session_state.step == 2:
 # Runs only once per finished answer (zero reruns while typing)
         if submitted:
             process_unknown_input(new_name)
+            st.rerun()
+
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
 # ========= STEP 3: Speaker Color Assignment =========
