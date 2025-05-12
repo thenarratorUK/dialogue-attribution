@@ -792,7 +792,6 @@ elif st.session_state.step == 2:
                 st.session_state.quotes_lines[index] = new_line
                 st.session_state.console_log.insert(0, f"Updated line {index+1} with speaker: {updated_speaker}")
                 st.session_state.unknown_index = index + 1
-            st.session_state.new_speaker_input = ""
             auto_save()
         
         # --- New: one‑submit‑per‑name form -------------------------------
@@ -806,8 +805,7 @@ elif st.session_state.step == 2:
 
 # Runs only once per finished answer (zero reruns while typing)
         if submitted:
-            st.session_state.new_speaker_input = new_name  # keep existing API
-            process_unknown_input()
+            process_unknown_input(new_name)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
 # ========= STEP 3: Speaker Color Assignment =========
