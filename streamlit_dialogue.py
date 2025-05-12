@@ -801,8 +801,8 @@ elif st.session_state.step == 2:
                 "Enter speaker name (or 'skip'/'exit'/'undo'):",
                 key="new_speaker_input",
                 placeholder="Type name and press Enter",
-        )
-        submitted = st.form_submit_button("Submit")  # Enter inside box triggers this
+            )
+            submitted = st.form_submit_button("Submit")  # Enter inside box triggers this
 
 # Runs only once per finished answer (zero reruns while typing)
         if submitted:
