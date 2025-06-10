@@ -147,8 +147,14 @@ if st.session_state.step == 0:
             st.rerun()
     st.stop()
     
-SAVED_COLORS_FILE = f"{userkey}-speaker_colors.json"
-PROGRESS_FILE = f"{userkey}-progress.json"
+def get_saved_colors_file():
+    return f"{st.session_state.userkey}-speaker_colors.json"
+    
+def get_progress_file():
+    return f"{st.session_state.userkey}-progress.json"
+    
+def get_unmatched_quotes_filename():
+    return f"{st.session_state.userkey}-unmatched_quotes.txt"
 
 def normalize_text(text):
     text = text.replace("\u00A0", " ")
@@ -202,10 +208,10 @@ def auto_save():
     }
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
-    with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
+    with open(get_progress_file(), "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4)
     if st.session_state.get("speaker_colors") is not None:
-        with open(SAVED_COLORS_FILE, "w", encoding="utf-8") as f:
+        with open(get_saved_colors_file(), "w", encoding="utf-8") as f:
             json.dump(st.session_state.speaker_colors, f, indent=4, ensure_ascii=False)
     if st.session_state.get("quotes_lines") and st.session_state.get("book_name"):
         quotes_filename = f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt"
@@ -214,8 +220,8 @@ def auto_save():
             f.write(quotes_text)
 
 def auto_load():
-    if os.path.exists(PROGRESS_FILE):
-        with open(PROGRESS_FILE, "r", encoding="utf-8") as f:
+    if os.path.exists(get_progress_file()):
+        with open(get_progress_file(), "r", encoding="utf-8") as f:
             data = json.load(f)
         for key, value in data.items():
             st.session_state[key] = value
@@ -228,7 +234,7 @@ def auto_load():
                 tmp_docx.write(docx_bytes)
                 st.session_state.docx_path = tmp_docx.name
 
-if os.path.exists(PROGRESS_FILE):
+if os.path.exists(get_progress_file()):
     if st.button("Load Saved Progress"):
          auto_load()
          st.rerun()
@@ -500,7 +506,7 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
         if not matched:
             unmatched_quotes.append(f"{quote_data['speaker']}: \"{quote_data['quote']}\" [Index: {quote_data['index']}]")
     if unmatched_quotes:
-        unmatched_quotes_filename = f"{st.session_state.userkey}-unmatched_quotes.txt"
+        unmatched_quotes_filename = get_unmatched_quotes_filename()
         with open(unmatched_quotes_filename, "w", encoding="utf-8") as f:
             f.write("\n".join(unmatched_quotes))
         st.write(f"⚠️ Unmatched quotes saved to '[userkey]-unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
@@ -625,15 +631,15 @@ def load_quotes(quotes_file, canonical_map):
     return quotes_list
 
 def load_existing_colors():
-  if os.path.exists(SAVED_COLORS_FILE):
-    with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
+  if os.path.exists(get_saved_colors_file()):
+    with open(get_saved_colors_file(), "r", encoding="utf-8") as f:
         loaded_colors = json.load(f)
     normalized_loaded = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
     st.session_state.speaker_colors = normalized_loaded
     st.session_state.existing_speaker_colors = normalized_loaded
 
 def save_speaker_colors(speaker_colors):
-    with open(SAVED_COLORS_FILE, "w", encoding="utf-8") as f:
+    with open(get_saved_colors_file(), "w", encoding="utf-8") as f:
         json.dump(speaker_colors, f, indent=4, ensure_ascii=False)
 
 # ---------------------------
@@ -882,8 +888,8 @@ elif st.session_state.step == 3:
         st.success("Speaker colors updated.")
     else:
         st.write("All speakers already have assigned colors.")
-    if os.path.exists(SAVED_COLORS_FILE):
-        with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
+    if os.path.exists(get_saved_colors_file()):
+        with open(get_saved_colors_file(), "r", encoding="utf-8") as f:
             loaded_colors = json.load(f)
         st.session_state.speaker_colors = loaded_colors
         st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
@@ -898,8 +904,8 @@ elif st.session_state.step == 3:
             st.rerun()
     with col2:
         if st.button("Edit Speaker Colors"):
-            if os.path.exists(SAVED_COLORS_FILE):
-                with open(SAVED_COLORS_FILE, "r", encoding="utf-8") as f:
+            if os.path.exists(get_saved_colors_file()):
+                with open(get_saved_colors_file(), "r", encoding="utf-8") as f:
                     loaded_colors = json.load(f)
                 st.session_state.speaker_colors = loaded_colors
                 st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
@@ -1003,11 +1009,11 @@ elif st.session_state.step == 4:
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
-    if os.path.exists(unmatched_quotes_filename):
-        with open(unmatched_quotes_filename, "rb") as f:
+    if os.path.exists(get_unmatched_quotes_filename()):
+        with open(get_unmatched_quotes_filename(), "rb") as f:
             unmatched_bytes = f.read()
         st.download_button("Download Unmatched Quotes TXT", unmatched_bytes,
-                           file_name=unmatched_quotes_filename, mime="text/plain")
+                           file_name=get_unmatched_quotes_filename(), mime="text/plain")
     if st.button("Return to Step 2"):
         if "book_name" in st.session_state:
             quotes_filename = f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt"
