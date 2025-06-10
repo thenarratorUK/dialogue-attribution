@@ -1045,7 +1045,13 @@ elif st.session_state.step == 4:
             except Exception as e:
                 st.warning(f"Could not remove {path}: {e}")
 
-        st.session_state.clear()  # Clears only this user's Streamlit session
-        st.success("Cache cleared for this session. Please reload to start again.")
-        st.session_state.step = 0
+        # List all your app’s keys here to reset ONLY relevant state
+        keys_to_clear = [
+            "step", "userkey", "docx_bytes", "docx_path", "book_name",
+            "quotes_lines", "speaker_colors", "existing_speaker_colors",
+            "unknown_index", "console_log", "canonical_map", "last_update"
+        ]
+        for k in keys_to_clear:
+            if k in st.session_state:
+                del st.session_state[k]
         st.rerun()
