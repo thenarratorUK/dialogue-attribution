@@ -123,8 +123,32 @@ COLOR_PALETTE = {
     "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)"),
     "error": (0, 0, 0, 0, "")  # For "Error": transparent background, no text color override.
 }
-SAVED_COLORS_FILE = "speaker_colors.json"
-PROGRESS_FILE = "progress.json"
+
+# ==== STEP 0: Userkey Entry ====
+if "userkey" not in st.session_state:
+    st.session_state.userkey = ""
+
+if "step" not in st.session_state:
+    st.session_state.step = 0
+
+# ========= STEP 0: User Identification =========
+
+if st.session_state.step == 0:
+    st.title("Welcome to Scripter")
+    st.write("Please enter a unique identifier. This can be any memorable username or passphrase. It must be unique to you—do not share it.")
+    user_input = st.text_input("Enter your user key (username, nickname, or passphrase):", key="userkey_input")
+    if st.button("Next"):
+        if user_input.strip() == "":
+            st.warning("You must enter a user key to continue.")
+            st.stop()
+        else:
+            st.session_state.userkey = user_input.strip()
+            st.session_state.step = 1
+            st.rerun()
+    st.stop()
+    
+SAVED_COLORS_FILE = f"{userkey}-speaker_colors.json"
+PROGRESS_FILE = f"{userkey}-progress.json"
 
 def normalize_text(text):
     text = text.replace("\u00A0", " ")
@@ -184,7 +208,7 @@ def auto_save():
         with open(SAVED_COLORS_FILE, "w", encoding="utf-8") as f:
             json.dump(st.session_state.speaker_colors, f, indent=4, ensure_ascii=False)
     if st.session_state.get("quotes_lines") and st.session_state.get("book_name"):
-        quotes_filename = f"{st.session_state.book_name}-quotes.txt"
+        quotes_filename = f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt"
         with open(quotes_filename, "w", encoding="utf-8") as f:
             quotes_text = "".join(st.session_state.quotes_lines)
             f.write(quotes_text)
@@ -279,7 +303,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
             for italic_text in italic_texts:
                 dialogue_list.append(f"{line_number}. Unknown: {italic_text}")
                 line_number += 1
-    output_path = f"{book_name}-quotes.txt"
+    output_path = f"{st.session_state.userkey}-{book_name}-quotes.txt"
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(dialogue_list))
     return dialogue_list
@@ -476,9 +500,10 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
         if not matched:
             unmatched_quotes.append(f"{quote_data['speaker']}: \"{quote_data['quote']}\" [Index: {quote_data['index']}]")
     if unmatched_quotes:
-        with open("unmatched_quotes.txt", "w", encoding="utf-8") as f:
+        unmatched_quotes_filename = f"{st.session_state.userkey}-unmatched_quotes.txt"
+        with open(unmatched_quotes_filename, "w", encoding="utf-8") as f:
             f.write("\n".join(unmatched_quotes))
-        st.write(f"⚠️ Unmatched quotes saved to 'unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
+        st.write(f"⚠️ Unmatched quotes saved to '[userkey]-unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
     return str(soup)
 
 def apply_manual_indentation_with_markers(original_docx, html):
@@ -621,8 +646,6 @@ def restart_app():
 # ---------------------------
 # Streamlit Multi-Step UI
 # ---------------------------
-if 'step' not in st.session_state:
-    st.session_state.step = 1
 
 # ========= STEP 1: Upload & Initialize =========
 if st.session_state.step == 1:
@@ -636,7 +659,7 @@ if st.session_state.step == 1:
             if st.session_state.get("quotes_lines") is not None:
                 quotes_txt = "\n".join(st.session_state.quotes_lines)
                 st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
-                                   file_name=f"{st.session_state.book_name}-quotes.txt", mime="text/plain")
+                                   file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
                 if st.button("Restart", key="restart_docx"):
                     restart_app()
                 if st.button("Continue", key="continue_docx"):
@@ -653,7 +676,7 @@ if st.session_state.step == 1:
                 st.success("Quotes extracted from DOCX.")
                 quotes_txt = "\n".join(dialogue_list)
                 st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
-                                   file_name=f"{st.session_state.book_name}-quotes.txt", mime="text/plain")
+                                   file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
                 if st.button("Restart", key="restart_docx"):
                     restart_app()
                 if st.button("Continue", key="continue_docx"):
@@ -839,7 +862,7 @@ elif st.session_state.step == 3:
             try:
                 default_index = color_options.index(default_color.title())
             except ValueError:
-                default_index = color_options.index("None")
+                default_index 	= color_options.index("None")
             selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+norm)
             updated_colors[norm] = selected.lower()
         # Merge updated colors with any already assigned values.
@@ -973,26 +996,26 @@ elif st.session_state.step == 4:
     with open(final_html_path, "rb") as f:
         html_bytes = f.read()
     st.download_button("Download HTML File", html_bytes,
-                       file_name=f"{st.session_state.book_name}.html", mime="text/html")
+                       file_name=f"{st.session_state.userkey}-{st.session_state.book_name}.html", mime="text/html")
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4, ensure_ascii=False).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
-                       file_name="speaker_colors.json", mime="application/json")
+                       file_name=f"{st.session_state.userkey}-speaker_colors.json", mime="application/json")
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
-                       file_name=f"{st.session_state.book_name}-quotes.txt", mime="text/plain")
-    if os.path.exists("unmatched_quotes.txt"):
-        with open("unmatched_quotes.txt", "rb") as f:
+                       file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
+    if os.path.exists(unmatched_quotes_filename):
+        with open(unmatched_quotes_filename, "rb") as f:
             unmatched_bytes = f.read()
         st.download_button("Download Unmatched Quotes TXT", unmatched_bytes,
-                           file_name="unmatched_quotes.txt", mime="text/plain")
+                           file_name=unmatched_quotes_filename, mime="text/plain")
     if st.button("Return to Step 2"):
         if "book_name" in st.session_state:
-            quotes_filename = f"{st.session_state.book_name}-quotes.txt"
+            quotes_filename = f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt"
             if os.path.exists(quotes_filename):
                 with open(quotes_filename, "r", encoding="utf-8") as f:
                     st.session_state.quotes_lines = f.read().splitlines(keepends=True)
-        if os.path.exists("speaker_colors.json"):
-            with open("speaker_colors.json", "r", encoding="utf-8") as f:
+        if os.path.exists(f"{st.session_state.userkey}-speaker_colors.json"):
+            with open(f"{st.session_state.userkey}-speaker_colors.json", "r", encoding="utf-8") as f:
                 colors = json.load(f)
             st.session_state.speaker_colors = colors
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
