@@ -1027,4 +1027,24 @@ elif st.session_state.step == 4:
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
         st.session_state.step = 2
         auto_save()
+        st.rerun() 
+        # Add a Clear Cache button below "Return to Step 2"
+    if st.button("Clear Cache for This User"):
+        # Only delete files for this userkey
+        files_to_remove = [
+            get_progress_file(),
+            get_saved_colors_file(),
+            get_unmatched_quotes_filename(),
+            f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt",
+            f"{st.session_state.userkey}-{st.session_state.book_name}.html"
+        ]
+        for path in files_to_remove:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception as e:
+                st.warning(f"Could not remove {path}: {e}")
+
+        st.session_state.clear()  # Clears only this user's Streamlit session
+        st.success("Cache cleared for this session. Please reload to start again.")
         st.rerun()
