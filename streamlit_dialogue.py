@@ -1047,4 +1047,5 @@ elif st.session_state.step == 4:
 
         st.session_state.clear()  # Clears only this user's Streamlit session
         st.success("Cache cleared for this session. Please reload to start again.")
+        st.session_state.step = 0
         st.rerun()
