@@ -216,7 +216,7 @@ def auto_save():
     if st.session_state.get("quotes_lines") and st.session_state.get("book_name"):
         quotes_filename = f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt"
         with open(quotes_filename, "w", encoding="utf-8") as f:
-            quotes_text = "".join(st.session_state.quotes_lines)
+            quotes_text = "\n".join(st.session_state.quotes_lines)
             f.write(quotes_text)
 
 def auto_load():
