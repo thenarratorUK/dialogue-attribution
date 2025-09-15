@@ -216,7 +216,8 @@ def auto_save():
     if st.session_state.get("quotes_lines") and st.session_state.get("book_name"):
         quotes_filename = f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt"
         with open(quotes_filename, "w", encoding="utf-8") as f:
-            f.writelines(st.session_state.quotes_lines)
+            quotes_text = "".join(st.session_state.quotes_lines)
+            f.write(quotes_text)
 
 def auto_load():
     if os.path.exists(get_progress_file()):
@@ -589,35 +590,6 @@ def generate_ranking_html(quotes_list, speaker_colors):
     lines.append('</div>')
     return "\n".join(lines)
 
-def generate_first_lines_html(quotes_list, speakers):
-    # Map: speaker (canonical) -> first qualifying quote
-    first_lines = {}
-    for quote in quotes_list:
-        speaker = quote["speaker"]
-        norm = normalize_speaker_name(speaker)
-        # Only add the first qualifying line (3+ words, else first)
-        if norm not in first_lines:
-            words = quote["quote"].strip().split()
-            if len(words) >= 3 or all(q["speaker"] != speaker for q in quotes_list if q != quote):
-                first_lines[norm] = quote["quote"].strip()
-            else:
-                # Tentatively store, may be replaced by a later 3+ word line
-                first_lines[norm] = quote["quote"].strip()
-        else:
-            if len(first_lines[norm].split()) < 3 and len(quote["quote"].strip().split()) >= 3:
-                first_lines[norm] = quote["quote"].strip()
-
-    lines = []
-    lines.append('<div id="first-lines-summary" style="border: 1px solid #ccc; padding: 10px; margin-bottom: 20px;">')
-    lines.append('<h2 style="margin: 0 0 5px 0;">First Substantial Lines</h2>')
-    for sp in speakers:
-        norm = normalize_speaker_name(sp)
-        if norm in first_lines:
-            line = first_lines[norm]
-            lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 8px 0;"><span class="highlight">{sp}</span>: <span style="font-style: italic;">{line}</span></p>')
-    lines.append('</div>')
-    return "\n".join(lines)
-  
 # ---------------------------
 # Canonical Speaker & Quote Functions
 # ---------------------------
@@ -992,8 +964,7 @@ elif st.session_state.step == 4:
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
     ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
-    first_lines_html = generate_first_lines_html(quotes_list, list(st.session_state.canonical_map.values()))
-    final_html_body = summary_html + "\n<br><br><br>\n" + ranking_html + "\n<br><br><br>\n" + first_lines_html + "\n" + final_html_body
+    final_html_body = summary_html + "\n<br><br><br>\n" + ranking_html + "\n" + final_html_body
     final_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
