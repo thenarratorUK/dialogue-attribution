@@ -677,7 +677,7 @@ if st.session_state.step == 1:
                     st.rerun()
             else:
                 dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
-                st.session_state.quotes_lines = dialogue_list
+                st.session_state.quotes_lines = [line + "\n" for line in dialogue_list]
                 st.session_state.docx_only = True
                 st.success("Quotes extracted from DOCX.")
                 quotes_txt = "\n".join(dialogue_list)
