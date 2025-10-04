@@ -252,28 +252,47 @@ def smart_join(run_texts):
     for text in run_texts[1:]:
         if not text:
             continue
+
+        # preserve any explicit/trailing spaces already in the text
         if result and result[-1].isspace():
             result += text.lstrip()
-        elif text[0].isspace():
+            continue
+        if text[0].isspace():
             result += text
-        elif text.startswith("...") or text.startswith("…"):
+            continue
+
+        # ellipses should attach to the previous token
+        if text.startswith("...") or text.startswith("…"):
             result = result.rstrip()
             result += text
-        elif text[0] in ATTACH_NO_SPACE:
+            continue
+
+        prev = result[-1]
+        first = text[0]
+
+        # 1) Contractions/possessives: apostrophe binds to following letters (That’s, you’re, I’ll)
+        if prev in {"'", "’", "‘"} and first.isalnum():
             result += text
-        elif result[-1] in DASHES:
-            if len(result) == 1 or result[-2].isspace():
-                result += text
-            else:
-                if result[-2].isalnum() and text[0].isalnum():
-                    result += text
-                else:
-                    result += " " + text
+            continue
+
+        # 2) Characters that attach to the previous token (no leading space)
+        if first in ATTACH_NO_SPACE:
+            result += text
+            continue
+
+        # 3) Dashes/hyphens: attach tightly on both sides
+        if first in DASHES:
+            result += text            # no space before dash
+            continue
+        if prev in DASHES:
+            result += text            # no space after dash
+            continue
+
+        # 4) Default spacing rule
+        if prev.isalnum() and first.isalnum():
+            result += text            # join words without extra space
         else:
-            if result[-1].isalnum() and text[0].isalnum():
-                result += text
-            else:
-                result += " " + text
+            result += " " + text       # otherwise, insert a space
     return result
 
 def extract_italicized_text(paragraph):
