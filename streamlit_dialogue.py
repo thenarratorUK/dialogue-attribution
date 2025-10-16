@@ -345,32 +345,45 @@ def is_run_italic(run):
         return False
     return False
 
+def effective_run_italic(run, paragraph):
+    """Return True if, after cascading styles, this run is italic.
+    Precedence (lowest to highest): paragraph style -> run character style -> direct run formatting.
+    Explicit False overrides inherited True.
+    """
+    base = False
+    try:
+        # Paragraph style
+        psty = getattr(paragraph, "style", None)
+        if psty is not None and getattr(psty.font, "italic", None) is True:
+            base = True
+        # Character style on run
+        rsty = getattr(run, "style", None)
+        rsty_italic = getattr(getattr(rsty, "font", None), "italic", None)
+        if rsty_italic is not None:
+            base = bool(rsty_italic)
+        # Direct run formatting
+        rfmt_italic = getattr(getattr(run, "font", None), "italic", None)
+        if rfmt_italic is not None:
+            base = bool(rfmt_italic)
+    except Exception:
+        pass
+    return base
+
+
+
 
 
 
 def extract_italicized_text(paragraph):
     """
     Return a list of italic blocks for a paragraph.
-    Detects italics set directly on runs, via a character style, or inherited from the paragraph style.
+    Detects italics after cascading: paragraph style -> character style -> direct run formatting.
     Preserves the existing >= 2-word threshold and smart_join behaviour.
     """
     italic_blocks = []
-
-    # Paragraph style italics -> entire paragraph is italic
-    para_style_italic = (
-        getattr(paragraph, "style", None) is not None
-        and getattr(paragraph.style.font, "italic", None) is True
-    )
-    if para_style_italic:
-        joined = smart_join([r.text for r in paragraph.runs])
-        if len(joined.split()) >= 2:
-            italic_blocks.append(joined)
-        return italic_blocks
-
-    # Otherwise, collect contiguous italic runs (direct or via character style)
     current_block = []
     for run in paragraph.runs:
-        if is_run_italic(run):
+        if effective_run_italic(run, paragraph):
             current_block.append(run.text)
         else:
             joined = smart_join(current_block)
@@ -381,7 +394,6 @@ def extract_italicized_text(paragraph):
     joined = smart_join(current_block)
     if len(joined.split()) >= 2:
         italic_blocks.append(joined)
-
     return italic_blocks
 def extract_dialogue_from_docx(book_name, docx_path):
     doc = docx.Document(docx_path)
