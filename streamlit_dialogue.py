@@ -202,7 +202,7 @@ def auto_save():
         "speaker_colors": st.session_state.get("speaker_colors"),
         "unknown_index": st.session_state.get("unknown_index", 0),
         "console_log": st.session_state.get("console_log", []),
-        "canonical_map": st.session_state.get("canonical_map"),
+        "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
         "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
     }
@@ -225,6 +225,43 @@ def auto_load():
             data = json.load(f)
         for key, value in data.items():
             st.session_state[key] = value
+            # Normalise restored structures
+            if isinstance(st.session_state.get("flagged_names"), list):
+                st.session_state.flagged_names = set(st.session_state.flagged_names)
+            if st.session_state.get("speaker_counts") is None:
+                st.session_state.speaker_counts = {}
+            if st.session_state.get("flagged_names") is None:
+                st.session_state.flagged_names = set()
+            if st.session_state.get("canonical_map") is None:
+                st.session_state.canonical_map = {}
+
+            # Rebuild counts/flags from quotes_lines if missing or empty
+            needs_rebuild = (
+                not st.session_state.speaker_counts or
+                (not st.session_state.flagged_names and st.session_state.speaker_counts)
+            )
+            if needs_rebuild and st.session_state.get("quotes_lines"):
+                pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
+                counts_cap10 = {}
+                flagged = set()
+                for _line in st.session_state.quotes_lines:
+                    m = pattern_speaker.match(_line.strip())
+                    if not m:
+                        continue
+                    speaker_raw = m.group(1).strip()
+                    effective = smart_title(speaker_raw)
+                    norm = normalize_speaker_name(effective)
+                    if norm in flagged:
+                        continue
+                    c = counts_cap10.get(norm, 0)
+                    if c < 10:
+                        c += 1
+                        counts_cap10[norm] = c
+                        if c >= 10:
+                            flagged.add(norm)
+                st.session_state.speaker_counts = counts_cap10
+                st.session_state.flagged_names = flagged
+
         if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
         if "docx_bytes" in st.session_state:
@@ -908,10 +945,11 @@ elif st.session_state.step == 2:
                 flagged_sorted = sorted(st.session_state.flagged_names)
                 st.caption("Frequent speakers:")
                 cols = st.columns(4)
+                cmap = st.session_state.get("canonical_map") or {}
                 for i, norm in enumerate(flagged_sorted):
-                    display = st.session_state.get("canonical_map", {}).get(norm, norm.title())
-                    if cols[i % 4].button(display, key=f"flagged_{norm}"):
-                        process_unknown_input(display)
+                    display_name = cmap.get(norm, norm.title())
+                    if cols[i % 4].button(display_name, key=f"flagged_{norm}"):
+                        process_unknown_input(display_name)
         except Exception as _e:
             pass
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
