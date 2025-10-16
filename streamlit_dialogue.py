@@ -202,11 +202,9 @@ def auto_save():
         "speaker_colors": st.session_state.get("speaker_colors"),
         "unknown_index": st.session_state.get("unknown_index", 0),
         "console_log": st.session_state.get("console_log", []),
-        "canonical_map": st.session_state.get("canonical_map"),
+        "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
-        "existing_speaker_colors": st.session_state.get("existing_speaker_colors"),
-        "speaker_counts": st.session_state.get("speaker_counts"),
-        "flagged_names": list(st.session_state.get("flagged_names", set()))
+        "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
     }
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
@@ -227,15 +225,41 @@ def auto_load():
             data = json.load(f)
         for key, value in data.items():
             st.session_state[key] = value
-        # Normalize loaded structures
+        
+        # Normalise restored structures and rebuild flags if needed
         if isinstance(st.session_state.get("flagged_names"), list):
             st.session_state.flagged_names = set(st.session_state.flagged_names)
-        if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
+        if st.session_state.get("speaker_counts") is None:
             st.session_state.speaker_counts = {}
-        if "flagged_names" not in st.session_state:
+        if st.session_state.get("flagged_names") is None:
             st.session_state.flagged_names = set()
+        if st.session_state.get("canonical_map") is None:
+            st.session_state.canonical_map = {}
 
-        if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
+        # Rebuild counts/flags from quotes_lines if missing or empty
+        needs_rebuild = (not st.session_state.speaker_counts) or (not st.session_state.flagged_names and st.session_state.speaker_counts)
+        if needs_rebuild and st.session_state.get("quotes_lines"):
+            pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
+            counts_cap10 = {}
+            flagged = set()
+            for _line in st.session_state.quotes_lines:
+                m = pattern_speaker.match(_line.strip())
+                if not m:
+                    continue
+                speaker_raw = m.group(1).strip()
+                effective = smart_title(speaker_raw)
+                norm = normalize_speaker_name(effective)
+                if norm in flagged:
+                    continue
+                c = counts_cap10.get(norm, 0)
+                if c < 10:
+                    c += 1
+                    counts_cap10[norm] = c
+                    if c >= 10:
+                        flagged.add(norm)
+            st.session_state.speaker_counts = counts_cap10
+            st.session_state.flagged_names = flagged
+if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
         if "docx_bytes" in st.session_state:
             docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
@@ -771,29 +795,6 @@ if st.session_state.step == 1:
                     quotes_text = quotes_file.read().decode("utf-8")
                     st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
                     st.session_state.docx_only = False
-                    # Initialize speaker counts (capped at 10) and flagged names for quick buttons
-                    pattern = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
-                    counts_cap10 = {}
-                    flagged = set()
-                    for _line in st.session_state.quotes_lines:
-                        m = pattern.match(_line)
-                        if not m:
-                            continue
-                        speaker_raw = m.group(1).strip()
-                        effective = smart_title(speaker_raw)
-                        norm = normalize_speaker_name(effective)
-                        # Early exit if already flagged
-                        if norm in flagged:
-                            continue
-                        c = counts_cap10.get(norm, 0)
-                        if c < 10:
-                            c += 1
-                            counts_cap10[norm] = c
-                            if c >= 10:
-                                flagged.add(norm)
-                    st.session_state.speaker_counts = counts_cap10
-                    st.session_state.flagged_names = flagged
-
                 else:
                     st.session_state.quotes_lines = None
                     st.session_state.docx_only = True
@@ -897,19 +898,22 @@ elif st.session_state.step == 2:
             else:
                 st.session_state.last_update = (index, st.session_state.quotes_lines[index])
                 updated_speaker = smart_title(new_speaker)
-                # Increment name count for unflagged speakers and flag at 10
-                norm = normalize_speaker_name(updated_speaker)
-                if "speaker_counts" not in st.session_state:
-                    st.session_state.speaker_counts = {}
-                if "flagged_names" not in st.session_state:
-                    st.session_state.flagged_names = set()
-                if norm not in st.session_state.flagged_names:
-                    new_cnt = st.session_state.speaker_counts.get(norm, 0) + 1
-                    if new_cnt >= 10:
-                        new_cnt = 10
-                        st.session_state.flagged_names.add(norm)
-                    st.session_state.speaker_counts[norm] = new_cnt
 
+                # Increment count for unflagged speakers and flag at 10
+                try:
+                    norm = normalize_speaker_name(updated_speaker)
+                    if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
+                        st.session_state.speaker_counts = {}
+                    if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
+                        st.session_state.flagged_names = set()
+                    if norm not in st.session_state.flagged_names:
+                        new_cnt = st.session_state.speaker_counts.get(norm, 0) + 1
+                        if new_cnt >= 10:
+                            new_cnt = 10
+                            st.session_state.flagged_names.add(norm)
+                        st.session_state.speaker_counts[norm] = new_cnt
+                except Exception as _e:
+                    pass
                 new_line = prefix + updated_speaker + remainder
                 if not new_line.endswith("\n"):
                     new_line += "\n"
@@ -932,17 +936,20 @@ elif st.session_state.step == 2:
         if submitted:
             process_unknown_input(new_name)
 
+        # Frequent speakers (flagged, alphabetical). Buttons act like typing + Enter.
+        try:
+            flagged = st.session_state.get("flagged_names") or set()
+            if flagged:
+                st.caption("Frequent speakers:")
+                cols = st.columns(4)
+                cmap = st.session_state.get("canonical_map") or {}
+                for i, norm in enumerate(sorted(flagged)):
+                    display_name = cmap.get(norm, norm.title())
+                    if cols[i % 4].button(display_name, key=f"flagged_{norm}"):
+                        process_unknown_input(display_name)
+        except Exception:
+            pass
 
-        # Flagged names shortcuts
-        if "flagged_names" in st.session_state and st.session_state.flagged_names:
-            flagged_sorted = sorted(st.session_state.flagged_names)
-            st.caption("Frequent speakers:")
-            cols = st.columns(4)
-            for i, norm in enumerate(flagged_sorted):
-                # Display canonical or title-case name
-                display_name = st.session_state.get("canonical_map", {}).get(norm, norm.title())
-                if cols[i % 4].button(display_name, key=f"flagged_{norm}"):
-                    process_unknown_input(display_name)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
 # ========= STEP 3: Speaker Color Assignment =========
