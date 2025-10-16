@@ -221,14 +221,9 @@ def auto_save():
 
 def auto_load():
     if os.path.exists(get_progress_file()):
-        with open(get_progress_file(), "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Restore raw fields
-        for key, value in data.items():
-            st.session_state[key] = value
-
-        # Normalise restored structures
+    if st.button("Load Saved Progress"):
+        auto_load()
+        st.rerun()
         if isinstance(st.session_state.get("flagged_names"), list):
             st.session_state.flagged_names = set(st.session_state.flagged_names)
         if st.session_state.get("speaker_counts") is None:
