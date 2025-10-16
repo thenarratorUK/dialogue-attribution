@@ -235,12 +235,6 @@ def auto_load():
             if st.session_state.get("canonical_map") is None:
                 st.session_state.canonical_map = {}
 
-            # Ensure 'unknown' is never flagged or counted for flags
-            if st.session_state.get("speaker_counts"):
-                st.session_state.speaker_counts.pop("unknown", None)
-            if st.session_state.get("flagged_names"):
-                st.session_state.flagged_names.discard("unknown")
-
             # Rebuild counts/flags from quotes_lines if missing or empty
             needs_rebuild = (
                 not st.session_state.speaker_counts or
@@ -259,14 +253,6 @@ def auto_load():
                     norm = normalize_speaker_name(effective)
                     if norm in flagged:
                         continue
-                if norm.lower() == \"unknown\":
-                    # Never flag Unknown on rebuild
-                    counts_cap10.pop(norm, None)
-                    continue
-        if norm.lower() == \"unknown\":
-            # Never flag Unknown
-            counts_cap10.pop(norm, None)
-            continue
                     c = counts_cap10.get(norm, 0)
                     if c < 10:
                         c += 1
@@ -957,7 +943,6 @@ elif st.session_state.step == 2:
         try:
             if "flagged_names" in st.session_state and st.session_state.flagged_names:
                 flagged_sorted = sorted(st.session_state.flagged_names)
-                flagged_sorted = [n for n in flagged_sorted if n.lower() != \"unknown\"]
                 st.caption("Frequent speakers:")
                 cols = st.columns(4)
                 cmap = st.session_state.get("canonical_map") or {}
