@@ -332,23 +332,57 @@ def smart_join(run_texts):
             result += " " + text       # otherwise, insert a space
     return result
 
+def is_run_italic(run):
+    """Return True if the run is italic due to direct formatting or its character style."""
+    try:
+        if getattr(run.font, "italic", None) is True:
+            return True
+        style = getattr(run, "style", None)
+        if style is not None and getattr(style.font, "italic", None) is True:
+            return True
+    except Exception:
+        # Be conservative; if anything goes wrong, treat as non-italic
+        return False
+    return False
+
+
+
 
 def extract_italicized_text(paragraph):
+    """
+    Return a list of italic blocks for a paragraph.
+    Detects italics set directly on runs, via a character style, or inherited from the paragraph style.
+    Preserves the existing >= 2-word threshold and smart_join behaviour.
+    """
     italic_blocks = []
+
+    # Paragraph style italics -> entire paragraph is italic
+    para_style_italic = (
+        getattr(paragraph, "style", None) is not None
+        and getattr(paragraph.style.font, "italic", None) is True
+    )
+    if para_style_italic:
+        joined = smart_join([r.text for r in paragraph.runs])
+        if len(joined.split()) >= 2:
+            italic_blocks.append(joined)
+        return italic_blocks
+
+    # Otherwise, collect contiguous italic runs (direct or via character style)
     current_block = []
     for run in paragraph.runs:
-        if run.italic:
+        if is_run_italic(run):
             current_block.append(run.text)
         else:
             joined = smart_join(current_block)
             if len(joined.split()) >= 2:
                 italic_blocks.append(joined)
             current_block = []
+    # flush tail
     joined = smart_join(current_block)
     if len(joined.split()) >= 2:
         italic_blocks.append(joined)
-    return italic_blocks
 
+    return italic_blocks
 def extract_dialogue_from_docx(book_name, docx_path):
     doc = docx.Document(docx_path)
     quote_pattern = re.compile(r'(?:^|\s)(["“].+?["”])(?=$|\s)')
