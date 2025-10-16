@@ -202,7 +202,7 @@ def auto_save():
         "speaker_colors": st.session_state.get("speaker_colors"),
         "unknown_index": st.session_state.get("unknown_index", 0),
         "console_log": st.session_state.get("console_log", []),
-        "canonical_map": st.session_state.get("canonical_map") or {},
+        "canonical_map": st.session_state.get("canonical_map") or {} or {},
         "book_name": st.session_state.get("book_name"),
         "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
     }
@@ -223,10 +223,12 @@ def auto_load():
     if os.path.exists(get_progress_file()):
         with open(get_progress_file(), "r", encoding="utf-8") as f:
             data = json.load(f)
+
+        # Restore raw fields
         for key, value in data.items():
             st.session_state[key] = value
-        
-        # Normalise restored structures and rebuild flags if needed
+
+        # Normalise restored structures
         if isinstance(st.session_state.get("flagged_names"), list):
             st.session_state.flagged_names = set(st.session_state.flagged_names)
         if st.session_state.get("speaker_counts") is None:
@@ -237,7 +239,7 @@ def auto_load():
             st.session_state.canonical_map = {}
 
         # Rebuild counts/flags from quotes_lines if missing or empty
-        needs_rebuild = (not st.session_state.speaker_counts) or (not st.session_state.flagged_names and st.session_state.speaker_counts)
+        needs_rebuild = (not st.session_state.speaker_counts) or (not st.session_state.flagged_names and st.session_state.speaker_counts is not None)
         if needs_rebuild and st.session_state.get("quotes_lines"):
             pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
             counts_cap10 = {}
@@ -259,25 +261,18 @@ def auto_load():
                         flagged.add(norm)
             st.session_state.speaker_counts = counts_cap10
             st.session_state.flagged_names = flagged
-if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
-            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
-        if "docx_bytes" in st.session_state:
-            docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
-            st.session_state.docx_bytes = docx_bytes
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
-                tmp_docx.write(docx_bytes)
-                st.session_state.docx_path = tmp_docx.name
 
-if os.path.exists(get_progress_file()):
-    if st.button("Load Saved Progress"):
-         auto_load()
-         st.rerun()
+        # Restore DOCX temp file if present
+        if "docx_bytes" in st.session_state and st.session_state.docx_bytes:
+            try:
+                docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8")) if isinstance(st.session_state["docx_bytes"], str) else st.session_state["docx_bytes"]
+                st.session_state.docx_bytes = docx_bytes
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
+                    tmp_docx.write(docx_bytes)
+                    st.session_state.docx_path = tmp_docx.name
+            except Exception:
+                pass
 
-# ---------------------------
-# Alternative Extraction Functions
-# ---------------------------
-ATTACH_NO_SPACE = {"'", "’", "‘", '"', "“", "”", ",", ".", ";", ":", "?", "!"}
-DASHES = {"-", "–", "—"}
 
 def smart_join(run_texts):
     if not run_texts:
@@ -981,7 +976,7 @@ elif st.session_state.step == 3:
             try:
                 default_index = color_options.index(default_color.title())
             except ValueError:
-                default_index 	= color_options.index("None")
+                default_index     = color_options.index("None")
             selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+norm)
             updated_colors[norm] = selected.lower()
         # Merge updated colors with any already assigned values.
