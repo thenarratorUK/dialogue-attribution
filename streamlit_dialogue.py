@@ -864,6 +864,22 @@ elif st.session_state.step == 2:
             else:
                 st.session_state.last_update = (index, st.session_state.quotes_lines[index])
                 updated_speaker = smart_title(new_speaker)
+
+                # Increment count for unflagged speakers and flag at 10
+                try:
+                    norm = normalize_speaker_name(updated_speaker)
+                    if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
+                        st.session_state.speaker_counts = {}
+                    if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
+                        st.session_state.flagged_names = set()
+                    if norm not in st.session_state.flagged_names:
+                        new_cnt = st.session_state.speaker_counts.get(norm, 0) + 1
+                        if new_cnt >= 10:
+                            new_cnt = 10
+                            st.session_state.flagged_names.add(norm)
+                        st.session_state.speaker_counts[norm] = new_cnt
+                except Exception as _e:
+                    pass
                 new_line = prefix + updated_speaker + remainder
                 if not new_line.endswith("\n"):
                     new_line += "\n"
@@ -886,6 +902,18 @@ elif st.session_state.step == 2:
         if submitted:
             process_unknown_input(new_name)
 
+        # Frequent speakers (flagged, alphabetical). Buttons act like typing + Enter.
+        try:
+            if "flagged_names" in st.session_state and st.session_state.flagged_names:
+                flagged_sorted = sorted(st.session_state.flagged_names)
+                st.caption("Frequent speakers:")
+                cols = st.columns(4)
+                for i, norm in enumerate(flagged_sorted):
+                    display = st.session_state.get("canonical_map", {}).get(norm, norm.title())
+                    if cols[i % 4].button(display, key=f"flagged_{norm}"):
+                        process_unknown_input(display)
+        except Exception as _e:
+            pass
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
 # ========= STEP 3: Speaker Color Assignment =========
@@ -917,7 +945,7 @@ elif st.session_state.step == 3:
             try:
                 default_index = color_options.index(default_color.title())
             except ValueError:
-                default_index     = color_options.index("None")
+                default_index 	= color_options.index("None")
             selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+norm)
             updated_colors[norm] = selected.lower()
         # Merge updated colors with any already assigned values.
