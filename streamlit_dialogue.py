@@ -251,6 +251,8 @@ def auto_load():
                     speaker_raw = m.group(1).strip()
                     effective = smart_title(speaker_raw)
                     norm = normalize_speaker_name(effective)
+        if norm.lower() == "unknown":
+            continue
                     if norm in flagged:
                         continue
                     c = counts_cap10.get(norm, 0)
@@ -708,6 +710,8 @@ def load_quotes(quotes_file, canonical_map):
                 index, speaker_raw, quote = match.groups()
                 effective = smart_title(speaker_raw)
                 norm = normalize_speaker_name(effective)
+        if norm.lower() == "unknown":
+            continue
                 canonical = canonical_map.get(norm, effective)
                 quotes_list.append({
                     "index": index,
