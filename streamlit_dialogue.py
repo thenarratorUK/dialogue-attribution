@@ -943,6 +943,7 @@ elif st.session_state.step == 2:
         try:
             if "flagged_names" in st.session_state and st.session_state.flagged_names:
                 flagged_sorted = sorted(st.session_state.flagged_names)
+                flagged_sorted = [n for n in flagged_sorted if n.lower() != "unknown"]
                 st.caption("Frequent speakers:")
                 cols = st.columns(4)
                 cmap = st.session_state.get("canonical_map") or {}
