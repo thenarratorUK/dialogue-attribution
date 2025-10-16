@@ -221,29 +221,29 @@ def auto_save():
 
 def auto_load():
     if os.path.exists(get_progress_file()):
-    with open(get_progress_file(), "r", encoding="utf-8") as f:
-    data = json.load(f)
-    for key, value in data.items():
-    st.session_state[key] = value
-    if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
-    st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
-    if "docx_bytes" in st.session_state:
-    docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
-    st.session_state.docx_bytes = docx_bytes
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
-    tmp_docx.write(docx_bytes)
-    st.session_state.docx_path = tmp_docx.name
+        with open(get_progress_file(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for key, value in data.items():
+            st.session_state[key] = value
+        if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
+            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
+        if "docx_bytes" in st.session_state:
+            docx_bytes = base64.b64decode(st.session_state["docx_bytes"].encode("utf-8"))
+            st.session_state.docx_bytes = docx_bytes
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
+                tmp_docx.write(docx_bytes)
+                st.session_state.docx_path = tmp_docx.name
 
-    if os.path.exists(get_progress_file()):
+if os.path.exists(get_progress_file()):
     if st.button("Load Saved Progress"):
-    auto_load()
-    st.rerun()
+         auto_load()
+         st.rerun()
 
-    # ---------------------------
-    # Alternative Extraction Functions
-    # ---------------------------
-    ATTACH_NO_SPACE = {"'", "’", "‘", '"', "“", "”", ",", ".", ";", ":", "?", "!"}
-    DASHES = {"-", "–", "—"}
+# ---------------------------
+# Alternative Extraction Functions
+# ---------------------------
+ATTACH_NO_SPACE = {"'", "’", "‘", '"', "“", "”", ",", ".", ";", ":", "?", "!"}
+DASHES = {"-", "–", "—"}
 
 def smart_join(run_texts):
     if not run_texts:
@@ -917,7 +917,7 @@ elif st.session_state.step == 3:
             try:
                 default_index = color_options.index(default_color.title())
             except ValueError:
-                default_index 	= color_options.index("None")
+                default_index     = color_options.index("None")
             selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+norm)
             updated_colors[norm] = selected.lower()
         # Merge updated colors with any already assigned values.
