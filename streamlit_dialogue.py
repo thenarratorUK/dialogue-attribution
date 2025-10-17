@@ -235,11 +235,11 @@ def auto_load():
             st.session_state[key] = value
         # Restore context search state robustly
         if isinstance(st.session_state.get('preview_hit_idx_map'), dict):
-                try:
-            st.session_state.preview_hit_idx_map = {int(k): int(v) for k, v in st.session_state.preview_hit_idx_map.items()}
-                except Exception:
-            # Fallback: clear if malformed
-            st.session_state.preview_hit_idx_map = {}
+            try:
+                st.session_state.preview_hit_idx_map = {int(k): int(v) for k, v in st.session_state.preview_hit_idx_map.items()}
+            except Exception:
+                # Fallback: clear if malformed
+                st.session_state.preview_hit_idx_map = {}
         if 'context_search_idx' in st.session_state and st.session_state.context_search_idx is None:
             st.session_state.context_search_idx = 0
         if 'last_rendered_unknown_index' in st.session_state and st.session_state.last_rendered_unknown_index is None:
@@ -354,13 +354,13 @@ def smart_join(run_texts):
 
 def is_run_italic(run):
     """Return True if the run is italic due to direct formatting or its character style."""
-                    try:
-                        if getattr(run.font, "italic", None) is True:
-                        return True
-                        style = getattr(run, "style", None)
-                        if style is not None and getattr(style.font, "italic", None) is True:
-                        return True
-                    except Exception:
+    try:
+        if getattr(run.font, "italic", None) is True:
+            return True
+        style = getattr(run, "style", None)
+        if style is not None and getattr(style.font, "italic", None) is True:
+            return True
+    except Exception:
         # Be conservative; if anything goes wrong, treat as non-italic
         return False
     return False
@@ -371,21 +371,21 @@ def effective_run_italic(run, paragraph):
     Explicit False overrides inherited True.
     """
     base = False
-                    try:
+    try:
         # Paragraph style
-                        psty = getattr(paragraph, "style", None)
-                        if psty is not None and getattr(psty.font, "italic", None) is True:
-                        base = True
+        psty = getattr(paragraph, "style", None)
+        if psty is not None and getattr(psty.font, "italic", None) is True:
+            base = True
         # Character style on run
-                        rsty = getattr(run, "style", None)
-                        rsty_italic = getattr(getattr(rsty, "font", None), "italic", None)
-                        if rsty_italic is not None:
-                        base = bool(rsty_italic)
+        rsty = getattr(run, "style", None)
+        rsty_italic = getattr(getattr(rsty, "font", None), "italic", None)
+        if rsty_italic is not None:
+            base = bool(rsty_italic)
         # Direct run formatting
-                        rfmt_italic = getattr(getattr(run, "font", None), "italic", None)
-                        if rfmt_italic is not None:
-                        base = bool(rfmt_italic)
-                    except Exception:
+        rfmt_italic = getattr(getattr(run, "font", None), "italic", None)
+        if rfmt_italic is not None:
+            base = bool(rfmt_italic)
+    except Exception:
         pass
     return base
 
@@ -819,6 +819,21 @@ if st.session_state.step == 1:
                     restart_app()
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
+                    # Determine first unresolved 'Unknown' line
+                    try:
+                        _pat_header = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):(.*)$')
+                        _ql = st.session_state.get("quotes_lines") or []
+                        _first_unknown = None
+                        for _j, _q in enumerate(_ql):
+                            _m = _pat_header.match(_q)
+                            if not _m:
+                                continue
+                            if _m.group(1).strip().lower() == "unknown":
+                                _first_unknown = _j
+                                break
+                        st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
+                    except Exception:
+                        st.session_state.unknown_index = 0
                     st.session_state.context_search_idx = 0
                     st.session_state.preview_hit_idx_map = {}
                     st.session_state.last_rendered_unknown_index = 0
@@ -838,60 +853,45 @@ if st.session_state.step == 1:
                     restart_app()
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
-                    
-                                        # Determine first unresolved 'Unknown' line
-                    try:
-                        _pat_header = re.compile(r'^\s*\d+(?:[A-Za-z]+)?\.\s+([^:]+):(.*)$')
-                        _ql = st.session_state.get("quotes_lines") or []
-                        _first_unknown = None
-                        for _j, _q in enumerate(_ql):
-                            _m = _pat_header.match(_q)
-                            if not _m:
-                                continue
-                            if _m.group(1).strip().lower() == "unknown":
-                                _first_unknown = _j
-                                break
-                        st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
-                    except Exception:
-                        st.session_state.unknown_index = 0
+                    st.session_state.unknown_index = 0
                     st.session_state.context_search_idx = 0
                     st.session_state.preview_hit_idx_map = {}
                     st.session_state.last_rendered_unknown_index = 0
-                    # === Occurrence-rank initial context resolution (Strategy A) ===
+# === Occurrence-rank initial context resolution (Strategy A) ===
                     try:
                         quotes = st.session_state.get("quotes_lines") or []
                         idx = int(st.session_state.get("unknown_index", 0))
                         docx_path = st.session_state.get("docx_path")
                         if not quotes or docx_path is None:
-                        raise RuntimeError("No quotes or DOCX path available for occurrence-rank initialisation.")
+                            raise RuntimeError("No quotes or DOCX path available for occurrence-rank initialisation.")
                         _pat = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+[^:]+:(.*)$")
                         def _norm_dialogue_text(s: str) -> str:
-                        return normalize_text(s).lower().strip()
+                            return normalize_text(s).lower().strip()
                         m_cur = _pat.match(quotes[idx]) if 0 <= idx < len(quotes) else None
                         if not m_cur:
-                        raise RuntimeError("Could not parse current dialogue line for occurrence-rank initialisation.")
+                            raise RuntimeError("Could not parse current dialogue line for occurrence-rank initialisation.")
                         target_dialogue_norm = _norm_dialogue_text(m_cur.group(1))
                         prior = 0
                         for q in quotes[:idx]:
-                        m_prev = _pat.match(q)
-                        if not m_prev:
-                        continue
-                        if _norm_dialogue_text(m_prev.group(1)) == target_dialogue_norm:
-                        prior += 1
+                            m_prev = _pat.match(q)
+                            if not m_prev:
+                                continue
+                            if _norm_dialogue_text(m_prev.group(1)) == target_dialogue_norm:
+                                prior += 1
                         k = prior + 1
                         from docx import Document
                         doc = Document(docx_path)
                         occ = 0
                         hit_para = None
                         for p_i, para in enumerate(doc.paragraphs):
-                        if target_dialogue_norm and target_dialogue_norm in _norm_dialogue_text(para.text):
-                        occ += 1
-                        if occ == k:
-                        hit_para = p_i
-                        break
+                            if target_dialogue_norm and target_dialogue_norm in _norm_dialogue_text(para.text):
+                                occ += 1
+                                if occ == k:
+                                    hit_para = p_i
+                                    break
                         if hit_para is not None:
-                        hit_map = st.session_state.get("preview_hit_idx_map", {}) or {}
-                        hit_map[idx] = hit_para
+                            hit_map = st.session_state.get("preview_hit_idx_map", {}) or {}
+                            hit_map[idx] = hit_para
                             st.session_state.preview_hit_idx_map = hit_map
                             st.session_state.context_search_idx = hit_para
                             st.session_state.last_rendered_unknown_index = idx
@@ -931,37 +931,27 @@ if st.session_state.step == 1:
                     save_speaker_colors(st.session_state.existing_speaker_colors)
                 else:
                     st.session_state.existing_speaker_colors = {}
-                    # Determine first unresolved 'Unknown' line (combined-upload path)
-                    try:
-                        _pat_header = re.compile(r'^\s*\d+(?:[A-Za-z]+)?\.\s+([^:]+):(.*)$')
-                        _ql = st.session_state.get('quotes_lines') or []
-                        _first_unknown = None
-                        for _j, _q in enumerate(_ql):
-                            _m = _pat_header.match(_q)
-                            if not _m:
-                                continue
-                            if _m.group(1).strip().lower() == 'unknown':
-                                _first_unknown = _j
-                                break
-                        st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
-                    except Exception:
-                        st.session_state.unknown_index = 0
-                    # Reset preview state
-                    st.session_state.preview_hit_idx_map = {}
-                    st.session_state.context_search_idx = 0
-                    st.session_state.last_rendered_unknown_index = 0
-                    # === Occurrence-rank initial context resolution (Strategy A) — moved to combined-upload path ===
-                    # === Occurrence-rank initial context resolution (Strategy A) ===                    try:                        quotes = st.session_state.get("quotes_lines") or []                        idx = int(st.session_state.get("unknown_index", 0))                        docx_path = st.session_state.get("docx_path")                        if not quotes or docx_path is None:                        raise RuntimeError("No quotes or DOCX path available for occurrence-rank initialisation.")                        _pat = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+[^:]+:(.*)$")                        def _norm_dialogue_text(s: str) -> str:                        return normalize_text(s).lower().strip()                        m_cur = _pat.match(quotes[idx]) if 0 <= idx < len(quotes) else None                        if not m_cur:                        raise RuntimeError("Could not parse current dialogue line for occurrence-rank initialisation.")                        target_dialogue_norm = _norm_dialogue_text(m_cur.group(1))                        prior = 0                        for q in quotes[:idx]:                        m_prev = _pat.match(q)                        if not m_prev:                        continue                        if _norm_dialogue_text(m_prev.group(1)) == target_dialogue_norm:                        prior += 1                        k = prior + 1                        from docx import Document                        doc = Document(docx_path)                        occ = 0                        hit_para = None                        for p_i, para in enumerate(doc.paragraphs):                        if target_dialogue_norm and target_dialogue_norm in _norm_dialogue_text(para.text):                        occ += 1                        if occ == k:                        hit_para = p_i                        break                        if hit_para is not None:                        hit_map = st.session_state.get("preview_hit_idx_map", {}) or {}                        hit_map[idx] = hit_para                            st.session_state.preview_hit_idx_map = hit_map                            st.session_state.context_search_idx = hit_para                            st.session_state.last_rendered_unknown_index = idx                    except Exception:                        pass                    # === End occurrence-rank initialisation ===                    st.session_state.console_log = []                    st.session_state.step = 2                    auto_save()                    st.rerun()                st.rerun()
+                st.session_state.unknown_index = 0
+                st.session_state.context_search_idx = 0
+                st.session_state.preview_hit_idx_map = {}
+                st.session_state.last_rendered_unknown_index = 0
+                st.session_state.console_log = []
+                if st.session_state.docx_only:
+                    st.session_state.step = 1
+                else:
+                    st.session_state.step = 2
+                auto_save()
+                st.rerun()
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
     # If we have a cached hit for the current unknown_index, don't alter context_search_idx
-                    try:
-                        _cur = int(st.session_state.get('unknown_index', 0))
-                        _map = st.session_state.get('preview_hit_idx_map', {}) or {}
-                        if _cur in _map and st.session_state.get('context_search_idx') is None:
+    try:
+        _cur = int(st.session_state.get('unknown_index', 0))
+        _map = st.session_state.get('preview_hit_idx_map', {}) or {}
+        if _cur in _map and st.session_state.get('context_search_idx') is None:
             st.session_state.context_search_idx = max(0, int(_map[_cur]))
-                    except Exception:
+    except Exception:
         pass
     # __guard_restored_context__
     # ===== Ensure frequent-speaker data is ready (even on first entry to Step 2) =====
@@ -974,34 +964,34 @@ elif st.session_state.step == 2:
     if st.session_state.get("canonical_map") is None:
         st.session_state.canonical_map = {}
 
-                    try:
+    try:
         # Rebuild counts/flags from quotes_lines if missing or empty
-                        needs_rebuild = (
-                        not st.session_state.speaker_counts or
-                        (not st.session_state.flagged_names and st.session_state.speaker_counts)
-                        )
-                        if needs_rebuild and st.session_state.get("quotes_lines"):
-                        pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
-                        counts_cap10 = {}
-                        flagged = set()
-                        for _line in st.session_state.quotes_lines:
-                        m = pattern_speaker.match(_line.strip())
-                        if not m:
-                        continue
-                        speaker_raw = m.group(1).strip()
-                        effective = smart_title(speaker_raw)
-                        norm = normalize_speaker_name(effective)
-                        if norm in flagged:
-                        continue
-                        c = counts_cap10.get(norm, 0)
-                        if c < 10:
-                        c += 1
-                        counts_cap10[norm] = c
-                        if c >= 10:
+        needs_rebuild = (
+            not st.session_state.speaker_counts or
+            (not st.session_state.flagged_names and st.session_state.speaker_counts)
+        )
+        if needs_rebuild and st.session_state.get("quotes_lines"):
+            pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
+            counts_cap10 = {}
+            flagged = set()
+            for _line in st.session_state.quotes_lines:
+                m = pattern_speaker.match(_line.strip())
+                if not m:
+                    continue
+                speaker_raw = m.group(1).strip()
+                effective = smart_title(speaker_raw)
+                norm = normalize_speaker_name(effective)
+                if norm in flagged:
+                    continue
+                c = counts_cap10.get(norm, 0)
+                if c < 10:
+                    c += 1
+                    counts_cap10[norm] = c
+                    if c >= 10:
                         flagged.add(norm)
-                        st.session_state.speaker_counts = counts_cap10
-                        st.session_state.flagged_names = flagged
-                    except Exception:
+            st.session_state.speaker_counts = counts_cap10
+            st.session_state.flagged_names = flagged
+    except Exception:
         # Non-fatal: if anything goes wrong here, we proceed without buttons rather than crashing.
         pass
 
@@ -1056,9 +1046,9 @@ elif st.session_state.step == 2:
             - Caches the matched paragraph index per unknown_index to avoid double-search and rerun glitches.
             Marker advancement is committed when unknown_index changes (handled in Step 2 init block).
             """
-                    try:
-                        doc = docx.Document(st.session_state.docx_path)
-                    except Exception:
+            try:
+                doc = docx.Document(st.session_state.docx_path)
+            except Exception:
                 return None
         
             target = normalize_text(dialogue).lower().strip()
@@ -1132,19 +1122,19 @@ elif st.session_state.step == 2:
                 updated_speaker = smart_title(new_speaker)
 
                 # Increment count for unflagged speakers and flag at 10
-                    try:
-                        norm = normalize_speaker_name(updated_speaker)
-                        if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
+                try:
+                    norm = normalize_speaker_name(updated_speaker)
+                    if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
                         st.session_state.speaker_counts = {}
-                        if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
+                    if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
                         st.session_state.flagged_names = set()
-                        if norm not in st.session_state.flagged_names:
+                    if norm not in st.session_state.flagged_names:
                         new_cnt = st.session_state.speaker_counts.get(norm, 0) + 1
                         if new_cnt >= 10:
-                        new_cnt = 10
-                        st.session_state.flagged_names.add(norm)
+                            new_cnt = 10
+                            st.session_state.flagged_names.add(norm)
                         st.session_state.speaker_counts[norm] = new_cnt
-                    except Exception as _e:
+                except Exception as _e:
                     pass
                 new_line = prefix + updated_speaker + remainder
                 if not new_line.endswith("\n"):
@@ -1158,18 +1148,18 @@ elif st.session_state.step == 2:
         # --- New: one‑submit‑per‑name form -------------------------------
 
         # Frequent speakers (flagged, alphabetical). Buttons act like typing + Enter.
-                    try:
-                        if "flagged_names" in st.session_state and st.session_state.flagged_names:
-                        flagged_sorted = sorted(st.session_state.flagged_names)
-                        flagged_sorted = [n for n in flagged_sorted if n.lower() != "unknown"]
-                        st.caption("Frequent speakers:")
-                        cols = st.columns(4)
-                        cmap = st.session_state.get("canonical_map") or {}
-                        for i, norm in enumerate(flagged_sorted):
-                        display_name = cmap.get(norm, norm.title())
-                        if cols[i % 4].button(display_name, key=f"flagged_{norm}"):
+        try:
+            if "flagged_names" in st.session_state and st.session_state.flagged_names:
+                flagged_sorted = sorted(st.session_state.flagged_names)
+                flagged_sorted = [n for n in flagged_sorted if n.lower() != "unknown"]
+                st.caption("Frequent speakers:")
+                cols = st.columns(4)
+                cmap = st.session_state.get("canonical_map") or {}
+                for i, norm in enumerate(flagged_sorted):
+                    display_name = cmap.get(norm, norm.title())
+                    if cols[i % 4].button(display_name, key=f"flagged_{norm}"):
                         process_unknown_input(display_name)
-                    except Exception as _e:
+        except Exception as _e:
             pass
         with st.form("unknown_form", clear_on_submit=True):
             new_name = st.text_input(
@@ -1211,9 +1201,9 @@ elif st.session_state.step == 3:
         for sp in speakers_to_assign:
             norm = normalize_speaker_name(sp)
             default_color = existing_colors.get(norm, "none")
-                    try:
-                        default_index = color_options.index(default_color.title())
-                    except ValueError:
+            try:
+                default_index = color_options.index(default_color.title())
+            except ValueError:
                 default_index 	= color_options.index("None")
             selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+norm)
             updated_colors[norm] = selected.lower()
@@ -1277,9 +1267,9 @@ elif st.session_state.step == "edit_colors":
             continue
         norm = normalize_speaker_name(sp)
         default_color = existing_colors.get(norm, "none")
-                    try:
-                        default_index = color_options.index(default_color.title())
-                    except ValueError:
+        try:
+            default_index = color_options.index(default_color.title())
+        except ValueError:
             default_index = color_options.index("None")
         selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+norm)
         updated_colors[norm] = selected.lower()
@@ -1386,10 +1376,10 @@ elif st.session_state.step == 4:
             f"{st.session_state.userkey}-{st.session_state.book_name}.html"
         ]
         for path in files_to_remove:
-                    try:
-                        if os.path.exists(path):
-                        os.remove(path)
-                    except Exception as e:
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception as e:
                 st.warning(f"Could not remove {path}: {e}")
 
         # List all your app’s keys here to reset ONLY relevant state
