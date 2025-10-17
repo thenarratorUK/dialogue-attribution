@@ -235,11 +235,11 @@ def auto_load():
             st.session_state[key] = value
         # Restore context search state robustly
         if isinstance(st.session_state.get('preview_hit_idx_map'), dict):
-                    try:
-                st.session_state.preview_hit_idx_map = {int(k): int(v) for k, v in st.session_state.preview_hit_idx_map.items()}
-                    except Exception:
-                # Fallback: clear if malformed
-                st.session_state.preview_hit_idx_map = {}
+                try:
+            st.session_state.preview_hit_idx_map = {int(k): int(v) for k, v in st.session_state.preview_hit_idx_map.items()}
+                except Exception:
+            # Fallback: clear if malformed
+            st.session_state.preview_hit_idx_map = {}
         if 'context_search_idx' in st.session_state and st.session_state.context_search_idx is None:
             st.session_state.context_search_idx = 0
         if 'last_rendered_unknown_index' in st.session_state and st.session_state.last_rendered_unknown_index is None:
