@@ -241,6 +241,41 @@ def auto_load():
                 (not st.session_state.flagged_names and st.session_state.speaker_counts)
             )
             if needs_rebuild and st.session_state.get("quotes_lines"):
+                pattern_speaker = re.compile(r"^\s*\d+(?:[A-Za-z]+)?\.\s+([^:]+):")
+                counts_cap10, flagged = {}, set()
+                for _line in st.session_state.quotes_lines:
+                    m = pattern_speaker.match(_line.strip())
+                    if not m:
+                        continue
+                    sp = smart_title(m.group(1).strip())
+                    norm = normalize_speaker_name(sp)
+                    if norm in flagged:
+                        continue
+                    c = counts_cap10.get(norm, 0)
+                    if c < 10:
+                        c += 1
+                        counts_cap10[norm] = c
+                        if c >= 10:
+                            flagged.add(norm)
+                flagged.discard(normalize_speaker_name("Unknown"))
+                st.session_state.speaker_counts = counts_cap10
+                st.session_state.flagged_names = flagged
+            # Normalise restored structures
+            if isinstance(st.session_state.get("flagged_names"), list):
+                st.session_state.flagged_names = set(st.session_state.flagged_names)
+            if st.session_state.get("speaker_counts") is None:
+                st.session_state.speaker_counts = {}
+            if st.session_state.get("flagged_names") is None:
+                st.session_state.flagged_names = set()
+            if st.session_state.get("canonical_map") is None:
+                st.session_state.canonical_map = {}
+
+            # Rebuild counts/flags from quotes_lines if missing or empty
+            needs_rebuild = (
+                not st.session_state.speaker_counts or
+                (not st.session_state.flagged_names and st.session_state.speaker_counts)
+            )
+            if needs_rebuild and st.session_state.get("quotes_lines"):
                 pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
                 counts_cap10 = {}
                 flagged = set()
@@ -811,6 +846,31 @@ if st.session_state.step == 1:
                 dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
                 st.session_state.quotes_lines = [line + "\n" for line in dialogue_list]
                 st.session_state.docx_only = True
+                # Initialize speaker counts (cap at 10) and flagged names
+                try:
+                    pattern_speaker = re.compile(r"^\s*\d+(?:[A-Za-z]+)?\.\s+([^:]+):")
+                    counts_cap10 = {}
+                    flagged = set()
+                    for _line in st.session_state.quotes_lines:
+                        m = pattern_speaker.match(_line.strip())
+                        if not m:
+                            continue
+                        sp = smart_title(m.group(1).strip())
+                        norm = normalize_speaker_name(sp)
+                        if norm in flagged:
+                            continue
+                        c = counts_cap10.get(norm, 0)
+                        if c < 10:
+                            c += 1
+                            counts_cap10[norm] = c
+                            if c >= 10:
+                                flagged.add(norm)
+                    flagged.discard(normalize_speaker_name("Unknown"))
+                    st.session_state.speaker_counts = counts_cap10
+                    st.session_state.flagged_names = flagged
+                except Exception:
+                    st.session_state.speaker_counts = {}
+                    st.session_state.flagged_names = set()
                 st.success("Quotes extracted from DOCX.")
                 quotes_txt = "\n".join(dialogue_list)
                 st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
@@ -844,6 +904,31 @@ if st.session_state.step == 1:
                     quotes_text = quotes_file.read().decode("utf-8")
                     st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
                     st.session_state.docx_only = False
+                # Initialize speaker counts (cap at 10) and flagged names
+                try:
+                    pattern_speaker = re.compile(r"^\s*\d+(?:[A-Za-z]+)?\.\s+([^:]+):")
+                    counts_cap10 = {}
+                    flagged = set()
+                    for _line in st.session_state.quotes_lines:
+                        m = pattern_speaker.match(_line.strip())
+                        if not m:
+                            continue
+                        sp = smart_title(m.group(1).strip())
+                        norm = normalize_speaker_name(sp)
+                        if norm in flagged:
+                            continue
+                        c = counts_cap10.get(norm, 0)
+                        if c < 10:
+                            c += 1
+                            counts_cap10[norm] = c
+                            if c >= 10:
+                                flagged.add(norm)
+                    flagged.discard(normalize_speaker_name("Unknown"))
+                    st.session_state.speaker_counts = counts_cap10
+                    st.session_state.flagged_names = flagged
+                except Exception:
+                    st.session_state.speaker_counts = {}
+                    st.session_state.flagged_names = set()
                 else:
                     st.session_state.quotes_lines = None
                     st.session_state.docx_only = True
