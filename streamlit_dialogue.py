@@ -204,19 +204,11 @@ def auto_save():
         "console_log": st.session_state.get("console_log", []),
         "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
-        "existing_speaker_colors": st.session_state.get("existing_speaker_colors"),
-        "context_search_idx": st.session_state.get("context_search_idx"),
-        "preview_hit_idx_map": st.session_state.get("preview_hit_idx_map"),
-        "last_rendered_unknown_index": st.session_state.get("last_rendered_unknown_index")
-    
+        "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
     }
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
     with open(get_progress_file(), "w", encoding="utf-8") as f:
-        # Ensure preview_hit_idx_map has string keys for JSON
-        if isinstance(data.get("preview_hit_idx_map"), dict):
-            data["preview_hit_idx_map"] = {str(k): int(v) for k, v in data["preview_hit_idx_map"].items()}
-        # __stringify_preview_keys__
         json.dump(data, f, indent=4)
     if st.session_state.get("speaker_colors") is not None:
         with open(get_saved_colors_file(), "w", encoding="utf-8") as f:
@@ -233,18 +225,6 @@ def auto_load():
             data = json.load(f)
         for key, value in data.items():
             st.session_state[key] = value
-        # Restore context search state robustly
-        if isinstance(st.session_state.get('preview_hit_idx_map'), dict):
-            try:
-                st.session_state.preview_hit_idx_map = {int(k): int(v) for k, v in st.session_state.preview_hit_idx_map.items()}
-            except Exception:
-                # Fallback: clear if malformed
-                st.session_state.preview_hit_idx_map = {}
-        if 'context_search_idx' in st.session_state and st.session_state.context_search_idx is None:
-            st.session_state.context_search_idx = 0
-        if 'last_rendered_unknown_index' in st.session_state and st.session_state.last_rendered_unknown_index is None:
-            st.session_state.last_rendered_unknown_index = 0
-        # __restore_context_state__
             # Normalise restored structures
             if isinstance(st.session_state.get("flagged_names"), list):
                 st.session_state.flagged_names = set(st.session_state.flagged_names)
@@ -395,8 +375,11 @@ def effective_run_italic(run, paragraph):
 
 
 def extract_italicized_text(paragraph):
-    """Return a list of italic blocks for a paragraph.
-    Applies cascade-aware italics detection and preserves the ≥2-word threshold."""
+    """
+    Return a list of italic blocks for a paragraph.
+    Detects italics after cascading: paragraph style -> character style -> direct run formatting.
+    Preserves the existing >= 2-word threshold and smart_join behaviour.
+    """
     italic_blocks = []
     current_block = []
     for run in paragraph.runs:
@@ -820,9 +803,6 @@ if st.session_state.step == 1:
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
-                    st.session_state.context_search_idx = 0
-                    st.session_state.preview_hit_idx_map = {}
-                    st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
@@ -840,9 +820,6 @@ if st.session_state.step == 1:
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
-                    st.session_state.context_search_idx = 0
-                    st.session_state.preview_hit_idx_map = {}
-                    st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
@@ -877,9 +854,6 @@ if st.session_state.step == 1:
                 else:
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
-                st.session_state.context_search_idx = 0
-                st.session_state.preview_hit_idx_map = {}
-                st.session_state.last_rendered_unknown_index = 0
                 st.session_state.console_log = []
                 if st.session_state.docx_only:
                     st.session_state.step = 1
@@ -890,96 +864,12 @@ if st.session_state.step == 1:
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
-    # If we have a cached hit for the current unknown_index, don't alter context_search_idx
-    try:
-        _cur = int(st.session_state.get('unknown_index', 0))
-        _map = st.session_state.get('preview_hit_idx_map', {}) or {}
-        if _cur in _map:
-            _cached = int(_map[_cur])
-            _current = st.session_state.get('context_search_idx')
-            if _current is None or not isinstance(_current, int):
-                st.session_state.context_search_idx = max(0, _cached)
-            else:
-                st.session_state.context_search_idx = max(0, min(int(_current), _cached))
-    except Exception:
-        pass
-    # __guard_restored_context__
-    # ===== Ensure frequent-speaker data is ready (even on first entry to Step 2) =====
-    # This mirrors the rebuild that happens during auto_load(), so the 'Frequent speakers' buttons
-    # appear without needing to click 'Load saved progress'.
-    if st.session_state.get("speaker_counts") is None:
-        st.session_state.speaker_counts = {}
-    if st.session_state.get("flagged_names") is None:
-        st.session_state.flagged_names = set()
-    if st.session_state.get("canonical_map") is None:
-        st.session_state.canonical_map = {}
-
-    try:
-        # Rebuild counts/flags from quotes_lines if missing or empty
-        needs_rebuild = (
-            not st.session_state.speaker_counts or
-            (not st.session_state.flagged_names and st.session_state.speaker_counts)
-        )
-        if needs_rebuild and st.session_state.get("quotes_lines"):
-            pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
-            counts_cap10 = {}
-            flagged = set()
-            for _line in st.session_state.quotes_lines:
-                m = pattern_speaker.match(_line.strip())
-                if not m:
-                    continue
-                speaker_raw = m.group(1).strip()
-                effective = smart_title(speaker_raw)
-                norm = normalize_speaker_name(effective)
-                if norm in flagged:
-                    continue
-                c = counts_cap10.get(norm, 0)
-                if c < 10:
-                    c += 1
-                    counts_cap10[norm] = c
-                    if c >= 10:
-                        flagged.add(norm)
-            st.session_state.speaker_counts = counts_cap10
-            st.session_state.flagged_names = flagged
-    except Exception:
-        # Non-fatal: if anything goes wrong here, we proceed without buttons rather than crashing.
-        pass
-
-
-    # ===== Preview state initialisation =====
-    if "context_search_idx" not in st.session_state:
-        st.session_state.context_search_idx = 0
-    if "preview_hit_idx_map" not in st.session_state:
-        st.session_state.preview_hit_idx_map = {}
-    if "last_rendered_unknown_index" not in st.session_state:
-        st.session_state.last_rendered_unknown_index = st.session_state.get("unknown_index", 0)
-    else:
-        # If the unknown index changed since last render, commit the previous preview hit
-        if st.session_state.get("unknown_index", 0) != st.session_state.last_rendered_unknown_index:
-            _prev = st.session_state.last_rendered_unknown_index
-            _map = st.session_state.get("preview_hit_idx_map", {})
-            if _prev in _map:
-                st.session_state.context_search_idx = _map.pop(_prev) + 1
-            st.session_state.last_rendered_unknown_index = st.session_state.get("unknown_index", 0)
-    # ========================================
     st.markdown("<h4>Step 2: Process Unknown Speakers</h4>", unsafe_allow_html=True)
     st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip', 'exit', or 'undo').")
     
     def get_next_unknown_line():
         quotes = st.session_state.get("quotes_lines")
         if quotes is None:
-            # Fallback: retry from the beginning if forward scan fails
-            for idx in range(0, len(doc.paragraphs)):
-                para_text_raw = doc.paragraphs[idx].text
-                para_text_norm = normalize_text(para_text_raw).lower()
-                if target in para_text_norm:
-                    hit_map[current_ui] = idx
-                    st.session_state.preview_hit_idx_map = hit_map
-                    prev_txt = doc.paragraphs[idx - 1].text if idx > 0 else ""
-                    next_txt = doc.paragraphs[idx + 1].text if idx + 1 < len(doc.paragraphs) else ""
-                    pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                    cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para_text_raw, count=1)
-                    return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
             return None, None, None
         pattern = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]+)(:.*)$")
         for i in range(st.session_state.unknown_index, len(quotes)):
@@ -1002,50 +892,25 @@ elif st.session_state.step == 2:
         dialogue = remainder.lstrip(": ").rstrip("\n")
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
         def get_context_for_dialogue(dialogue):
-            """
-            Preview context builder (idempotent).
-            - Does NOT advance context_search_idx during render.
-            - Caches the matched paragraph index per unknown_index to avoid double-search and rerun glitches.
-            Marker advancement is committed when unknown_index changes (handled in Step 2 init block).
-            """
             try:
                 doc = docx.Document(st.session_state.docx_path)
             except Exception:
                 return None
-        
-            target = normalize_text(dialogue).lower().strip()
-            if not target:
-                return None
-        
-            current_ui = st.session_state.get("unknown_index", 0)
-            hit_map = st.session_state.get("preview_hit_idx_map", {})
-        
-            # If we already found a hit for this unknown_index, reuse it (no side-effects)
-            if current_ui in hit_map:
-                idx = hit_map[current_ui]
-                prev_txt = doc.paragraphs[idx - 1].text if idx > 0 else ""
-                cur_txt  = doc.paragraphs[idx].text
-                next_txt = doc.paragraphs[idx + 1].text if idx + 1 < len(doc.paragraphs) else ""
-                pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", cur_txt, count=1)
-                return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
-        
-            # Otherwise, search forward starting at the moving marker
-            start_idx = int(st.session_state.get("context_search_idx", 0))
-            for idx in range(start_idx, len(doc.paragraphs)):
-                para_text_raw = doc.paragraphs[idx].text
-                para_text_norm = normalize_text(para_text_raw).lower()
-                if target in para_text_norm:
-                    # Cache hit for this unknown_index; do not advance marker here
-                    hit_map[current_ui] = idx
-                    st.session_state.preview_hit_idx_map = hit_map  # ensure persistence across reruns
-                    prev_txt = doc.paragraphs[idx - 1].text if idx > 0 else ""
-                    next_txt = doc.paragraphs[idx + 1].text if idx + 1 < len(doc.paragraphs) else ""
+            normalized_dialogue = normalize_text(dialogue).lower()
+            for idx, para in enumerate(doc.paragraphs):
+                para_text = normalize_text(para.text)
+                if normalized_dialogue in para_text.lower():
+                    context = {}
+                    if idx > 0:
+                        context['previous'] = doc.paragraphs[idx-1].text
                     pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                    cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para_text_raw, count=1)
-                    return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
-        
+                    highlighted = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para.text)
+                    context['current'] = highlighted
+                    if idx+1 < len(doc.paragraphs):
+                        context['next'] = doc.paragraphs[idx+1].text
+                    return context
             return None
+
         context = get_context_for_dialogue(dialogue)
         if context:
             if "previous" in context:
