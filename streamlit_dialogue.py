@@ -857,6 +857,7 @@ if st.session_state.step == 1:
                     st.session_state.context_search_idx = 0
                     st.session_state.preview_hit_idx_map = {}
                     st.session_state.last_rendered_unknown_index = 0
+
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
@@ -899,6 +900,49 @@ if st.session_state.step == 1:
                     st.session_state.step = 1
                 else:
                     st.session_state.step = 2
+
+                # === Occurrence-rank initial context resolution (Strategy A) ===
+                # Only run when both a DOCX and a Quotes TXT are provided (json optional)
+                try:
+                    if not st.session_state.get("docx_only", True):
+                        quotes = st.session_state.get("quotes_lines") or []
+                        idx = int(st.session_state.get("unknown_index", 0))
+                        docx_path = st.session_state.get("docx_path")
+                        if not quotes or docx_path is None:
+                            raise RuntimeError("No quotes or DOCX path available for occurrence-rank initialisation.")
+                        _pat = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+[^:]+:(.*)$")
+                        def _norm_dialogue_text(s: str) -> str:
+                            return normalize_text(s).lower().strip()
+                        m_cur = _pat.match(quotes[idx]) if 0 <= idx < len(quotes) else None
+                        if not m_cur:
+                            raise RuntimeError("Could not parse current dialogue line for occurrence-rank initialisation.")
+                        target_dialogue_norm = _norm_dialogue_text(m_cur.group(1))
+                        from docx import Document
+                        doc = Document(docx_path)
+                        # Determine this dialogue line's k-th occurrence index among identical lines
+                        prior = 0
+                        for q in quotes[:idx]:
+                            m_q = _pat.match(q)
+                            if m_q and _norm_dialogue_text(m_q.group(1)) == target_dialogue_norm:
+                                prior += 1
+                        k = prior + 1
+                        occ = 0
+                        hit_para = None
+                        for p_i, para in enumerate(doc.paragraphs):
+                            if target_dialogue_norm and target_dialogue_norm in _norm_dialogue_text(para.text):
+                                occ += 1
+                                if occ == k:
+                                    hit_para = p_i
+                                    break
+                        if hit_para is not None:
+                            hit_map = st.session_state.get("preview_hit_idx_map", {}) or {}
+                            hit_map[idx] = hit_para
+                            st.session_state.preview_hit_idx_map = hit_map
+                            st.session_state.context_search_idx = hit_para
+                            st.session_state.last_rendered_unknown_index = idx
+                except Exception:
+                    pass
+                # === End occurrence-rank initialisation ===
                 auto_save()
                 st.rerun()
 
