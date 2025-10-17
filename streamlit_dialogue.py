@@ -204,7 +204,7 @@ def auto_save():
         "console_log": st.session_state.get("console_log", []),
         "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
-        "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
+        "existing_speaker_colors": st.session_state.get("existing_speaker_colors"),
         "context_search_idx": st.session_state.get("context_search_idx", 0),
         "preview_hit_idx_map": st.session_state.get("preview_hit_idx_map", {}),
         "last_rendered_unknown_index": st.session_state.get("last_rendered_unknown_index", st.session_state.get("unknown_index", 0)),
