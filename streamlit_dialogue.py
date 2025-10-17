@@ -838,7 +838,7 @@ if st.session_state.step == 1:
                     st.session_state.preview_hit_idx_map = {}
                     st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
-                                        st.session_state.step = 2
+                    st.session_state.step = 2
                     auto_save()
                     st.rerun()
             else:
