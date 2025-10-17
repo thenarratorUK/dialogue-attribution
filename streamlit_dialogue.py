@@ -804,13 +804,13 @@ if st.session_state.step == 1:
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
                     st.session_state.console_log = []
-    # Update flagged_names after parsing and speaker counting
-    counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
-    flagged = set()
-    for norm, c in counts_cap10.items():
-        if c >= 10:
-            flagged.add(norm)
-    st.session_state.flagged_names = flagged
+                    # Update flagged_names after parsing and speaker counting
+                    counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
+                    flagged = set()
+                    for norm, c in counts_cap10.items():
+                        if c >= 10:
+                            flagged.add(norm)
+                    st.session_state.flagged_names = flagged
                     st.session_state.step = 2
                     auto_save()
                     st.rerun()
