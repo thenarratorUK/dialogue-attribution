@@ -204,10 +204,7 @@ def auto_save():
         "console_log": st.session_state.get("console_log", []),
         "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
-        "existing_speaker_colors": st.session_state.get("existing_speaker_colors"),
-        "context_search_idx": st.session_state.get("context_search_idx", 0),
-        "preview_hit_idx_map": st.session_state.get("preview_hit_idx_map", {}),
-        "last_rendered_unknown_index": st.session_state.get("last_rendered_unknown_index", st.session_state.get("unknown_index", 0)),
+        "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
     }
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
@@ -223,14 +220,6 @@ def auto_save():
             f.write(quotes_text)
 
 def auto_load():
-        # Ensure preview markers are sane after load
-        if not isinstance(st.session_state.get('context_search_idx'), int):
-            st.session_state.context_search_idx = 0
-        if not isinstance(st.session_state.get('preview_hit_idx_map'), dict):
-            st.session_state.preview_hit_idx_map = {}
-        if not isinstance(st.session_state.get('last_rendered_unknown_index'), int):
-            st.session_state.last_rendered_unknown_index = max(st.session_state.get('unknown_index', 0) - 1, 0)
-
     if os.path.exists(get_progress_file()):
         with open(get_progress_file(), "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -881,6 +870,47 @@ if st.session_state.step == 1:
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
+    # ===== Ensure frequent-speaker data is ready (even on first entry to Step 2) =====
+    # This mirrors the rebuild that happens during auto_load(), so the 'Frequent speakers' buttons
+    # appear without needing to click 'Load saved progress'.
+    if st.session_state.get("speaker_counts") is None:
+        st.session_state.speaker_counts = {}
+    if st.session_state.get("flagged_names") is None:
+        st.session_state.flagged_names = set()
+    if st.session_state.get("canonical_map") is None:
+        st.session_state.canonical_map = {}
+
+    try:
+        # Rebuild counts/flags from quotes_lines if missing or empty
+        needs_rebuild = (
+            not st.session_state.speaker_counts or
+            (not st.session_state.flagged_names and st.session_state.speaker_counts)
+        )
+        if needs_rebuild and st.session_state.get("quotes_lines"):
+            pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
+            counts_cap10 = {}
+            flagged = set()
+            for _line in st.session_state.quotes_lines:
+                m = pattern_speaker.match(_line.strip())
+                if not m:
+                    continue
+                speaker_raw = m.group(1).strip()
+                effective = smart_title(speaker_raw)
+                norm = normalize_speaker_name(effective)
+                if norm in flagged:
+                    continue
+                c = counts_cap10.get(norm, 0)
+                if c < 10:
+                    c += 1
+                    counts_cap10[norm] = c
+                    if c >= 10:
+                        flagged.add(norm)
+            st.session_state.speaker_counts = counts_cap10
+            st.session_state.flagged_names = flagged
+    except Exception:
+        # Non-fatal: if anything goes wrong here, we proceed without buttons rather than crashing.
+        pass
+
 
     # ===== Preview state initialisation =====
     if "context_search_idx" not in st.session_state:
