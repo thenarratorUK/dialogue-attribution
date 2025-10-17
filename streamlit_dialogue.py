@@ -838,7 +838,26 @@ if st.session_state.step == 1:
                     st.session_state.preview_hit_idx_map = {}
                     st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
-                    # === Occurrence-rank initial context resolution (Strategy A) ===
+                                        st.session_state.step = 2
+                    auto_save()
+                    st.rerun()
+            else:
+                dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
+                st.session_state.quotes_lines = [line + "\n" for line in dialogue_list]
+                st.session_state.docx_only = True
+                st.success("Quotes extracted from DOCX.")
+                quotes_txt = "\n".join(dialogue_list)
+                st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
+                                   file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
+                if st.button("Restart", key="restart_docx"):
+                    restart_app()
+                if st.button("Continue", key="continue_docx"):
+                    st.session_state.docx_only = False
+                    st.session_state.unknown_index = 0
+                    st.session_state.context_search_idx = 0
+                    st.session_state.preview_hit_idx_map = {}
+                    st.session_state.last_rendered_unknown_index = 0
+# === Occurrence-rank initial context resolution (Strategy A) ===
                     try:
                         quotes = st.session_state.get("quotes_lines") or []
                         idx = int(st.session_state.get("unknown_index", 0))
@@ -879,25 +898,6 @@ if st.session_state.step == 1:
                     except Exception:
                         pass
                     # === End occurrence-rank initialisation ===
-                    st.session_state.step = 2
-                    auto_save()
-                    st.rerun()
-            else:
-                dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
-                st.session_state.quotes_lines = [line + "\n" for line in dialogue_list]
-                st.session_state.docx_only = True
-                st.success("Quotes extracted from DOCX.")
-                quotes_txt = "\n".join(dialogue_list)
-                st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
-                                   file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
-                if st.button("Restart", key="restart_docx"):
-                    restart_app()
-                if st.button("Continue", key="continue_docx"):
-                    st.session_state.docx_only = False
-                    st.session_state.unknown_index = 0
-                    st.session_state.context_search_idx = 0
-                    st.session_state.preview_hit_idx_map = {}
-                    st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
