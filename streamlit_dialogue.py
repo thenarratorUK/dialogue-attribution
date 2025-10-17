@@ -882,6 +882,21 @@ if st.session_state.step == 1:
                     quotes_text = quotes_file.read().decode("utf-8")
                     st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
                     st.session_state.docx_only = False
+                    # Determine first unresolved 'Unknown' line when TXT is provided
+                    try:
+                        _pat_header = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):(.*)$')
+                        _ql = st.session_state.get("quotes_lines") or []
+                        _first_unknown = None
+                        for _j, _q in enumerate(_ql):
+                            _m = _pat_header.match(_q)
+                            if not _m:
+                                continue
+                            if _m.group(1).strip().lower() == "unknown":
+                                _first_unknown = _j
+                                break
+                        st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
+                    except Exception:
+                        st.session_state.unknown_index = 0
                 else:
                     st.session_state.quotes_lines = None
                     st.session_state.docx_only = True
