@@ -171,52 +171,6 @@ def normalize_speaker_name(name):
     # Replace typographic apostrophes with straight ones, remove periods, lowercase, and trim.
     return name.replace("’", "'").replace("‘", "'").replace(".", "").lower().strip()
 
-
-
-def ensure_counts_and_flags_from_quotes():
-    """Ensure speaker_counts and flagged_names are initialised from quotes_lines.
-    This mirrors the rebuild logic used in auto_load() so Step 1 -> Step 2 has buttons immediately.
-    ""\""
-    # Ensure containers exist
-    if st.session_state.get("speaker_counts") is None:
-        st.session_state.speaker_counts = {}
-    if st.session_state.get("flagged_names") is None:
-        st.session_state.flagged_names = set()
-    if st.session_state.get("canonical_map") is None:
-        st.session_state.canonical_map = {}
-    # Skip if already present
-    if st.session_state.speaker_counts and st.session_state.flagged_names:
-        return
-    quotes_lines = st.session_state.get("quotes_lines") or []
-    if not quotes_lines:
-        return
-    # Build counts capped at 10, and flagged when reaching >=10 (excluding 'unknown')
-    pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
-    counts_cap10 = {}
-    flagged = set()
-    for line in quotes_lines:
-        m = pattern_speaker.match(line)
-        if not m:
-            continue
-        raw_name = m.group(1).strip()
-        # Use canonical mapping if present
-        cmap = st.session_state.get("canonical_map") or {}
-        effective = cmap.get(raw_name, raw_name)
-        norm = normalize_speaker_name(effective)
-        if norm == "unknown":
-            continue
-        if norm in flagged:
-            continue
-        c = counts_cap10.get(norm, 0)
-        if c < 10:
-            c += 1
-            counts_cap10[norm] = c
-            if c >= 10:
-                flagged.add(norm)
-    if not st.session_state.get("speaker_counts"):
-        st.session_state.speaker_counts = counts_cap10
-    if not st.session_state.get("flagged_names"):
-        st.session_state.flagged_names = flagged
 def smart_title(name):
     words = name.split()
     if not words:
@@ -850,7 +804,6 @@ if st.session_state.step == 1:
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
                     st.session_state.console_log = []
-                    ensure_counts_and_flags_from_quotes()
                     st.session_state.step = 2
                     auto_save()
                     st.rerun()
@@ -868,7 +821,6 @@ if st.session_state.step == 1:
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
                     st.session_state.console_log = []
-                    ensure_counts_and_flags_from_quotes()
                     st.session_state.step = 2
                     auto_save()
                     st.rerun()
@@ -912,7 +864,6 @@ if st.session_state.step == 1:
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
-    ensure_counts_and_flags_from_quotes()
     st.markdown("<h4>Step 2: Process Unknown Speakers</h4>", unsafe_allow_html=True)
     st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip', 'exit', or 'undo').")
     
@@ -1201,6 +1152,7 @@ elif st.session_state.step == 4:
       -webkit-box-decoration-break: clone;
     }}
   </style>
+"""
 </head>
 <body>
 {final_html_body}
