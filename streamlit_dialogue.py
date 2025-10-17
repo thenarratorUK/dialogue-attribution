@@ -917,14 +917,70 @@ elif st.session_state.step == 2:
         def get_context_for_dialogue(dialogue):
             """
             Preview context builder (idempotent).
+            Picks the N-th occurrence of `dialogue` in the DOCX, where N is how many
+            times this `dialogue` appears in quotes_lines up to and including unknown_index.
             - Does NOT advance context_search_idx during render.
-            - Caches the matched paragraph index per unknown_index to avoid double-search and rerun glitches.
-            Marker advancement is committed when unknown_index changes (handled in Step 2 init block).
+            - Caches the matched paragraph index per unknown_index.
+            Marker advancement is committed when unknown_index changes (handled in Step 2 init).
             """
             try:
                 doc = docx.Document(st.session_state.docx_path)
             except Exception:
                 return None
+        
+            target = normalize_text(dialogue).lower().strip()
+            if not target:
+                return None
+        
+            current_ui = st.session_state.get("unknown_index", 0)
+            hit_map = st.session_state.get("preview_hit_idx_map", {})
+        
+            # Reuse cached location if we have it
+            if current_ui in hit_map:
+                idx_hit = hit_map[current_ui]
+                prev_txt = doc.paragraphs[idx_hit - 1].text if idx_hit > 0 else ""
+                cur_txt  = doc.paragraphs[idx_hit].text
+                next_txt = doc.paragraphs[idx_hit + 1].text if idx_hit + 1 < len(doc.paragraphs) else ""
+                pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
+                cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", cur_txt, count=1)
+                return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
+        
+            # Determine N = how many times this dialogue appears up to and including current_ui
+            quotes = st.session_state.get("quotes_lines") or []
+            def extract_text(q):
+                # Support multiple possible shapes
+                if isinstance(q, dict):
+                    for k in ("dialogue", "text", "quote", "content", "line_text"):
+                        if k in q and q[k]:
+                            return str(q[k])
+                    # Some structures store as tuple-like in 'line'
+                    if "line" in q and isinstance(q["line"], (list, tuple)) and q["line"]:
+                        return str(q["line"][0])
+                return str(q)
+            count_so_far = 0
+            for q in quotes[: current_ui + 1]:
+                if normalize_text(extract_text(q)).lower().strip() == target:
+                    count_so_far += 1
+            if count_so_far <= 0:
+                count_so_far = 1  # fall back to first occurrence
+        
+            # Find the N-th occurrence from the START of the doc
+            occ = 0
+            for idx_hit in range(0, len(doc.paragraphs)):
+                para_text_norm = normalize_text(doc.paragraphs[idx_hit].text).lower()
+                if target in para_text_norm:
+                    occ += 1
+                    if occ == count_so_far:
+                        hit_map[current_ui] = idx_hit
+                        st.session_state.preview_hit_idx_map = hit_map
+                        prev_txt = doc.paragraphs[idx_hit - 1].text if idx_hit > 0 else ""
+                        cur_txt  = doc.paragraphs[idx_hit].text
+                        next_txt = doc.paragraphs[idx_hit + 1].text if idx_hit + 1 < len(doc.paragraphs) else ""
+                        pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
+                        cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", cur_txt, count=1)
+                        return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
+        
+            return None
         
             target = normalize_text(dialogue).lower().strip()
             if not target:
