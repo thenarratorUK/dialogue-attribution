@@ -204,12 +204,21 @@ def auto_save():
         "console_log": st.session_state.get("console_log", []),
         "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
-        "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
+        "existing_speaker_colors": st.session_state.get("existing_speaker_colors"),
+        "context_search_idx": st.session_state.get("context_search_idx"),
+        "preview_hit_idx_map": st.session_state.get("preview_hit_idx_map"),
+        "last_rendered_unknown_index": st.session_state.get("last_rendered_unknown_index")
+    
     }
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
     with open(get_progress_file(), "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+        
+    # Ensure preview_hit_idx_map has string keys for JSON
+    if isinstance(data.get("preview_hit_idx_map"), dict):
+        data["preview_hit_idx_map"] = {str(k): int(v) for k, v in data["preview_hit_idx_map"].items()}
+    # __stringify_preview_keys__
+json.dump(data, f, indent=4)
     if st.session_state.get("speaker_colors") is not None:
         with open(get_saved_colors_file(), "w", encoding="utf-8") as f:
             json.dump(st.session_state.speaker_colors, f, indent=4, ensure_ascii=False)
@@ -225,6 +234,18 @@ def auto_load():
             data = json.load(f)
         for key, value in data.items():
             st.session_state[key] = value
+        # Restore context search state robustly
+        if isinstance(st.session_state.get('preview_hit_idx_map'), dict):
+            try:
+                st.session_state.preview_hit_idx_map = {int(k): int(v) for k, v in st.session_state.preview_hit_idx_map.items()}
+            except Exception:
+                # Fallback: clear if malformed
+                st.session_state.preview_hit_idx_map = {}
+        if 'context_search_idx' in st.session_state and st.session_state.context_search_idx is None:
+            st.session_state.context_search_idx = 0
+        if 'last_rendered_unknown_index' in st.session_state and st.session_state.last_rendered_unknown_index is None:
+            st.session_state.last_rendered_unknown_index = 0
+        # __restore_context_state__
             # Normalise restored structures
             if isinstance(st.session_state.get("flagged_names"), list):
                 st.session_state.flagged_names = set(st.session_state.flagged_names)
@@ -870,6 +891,15 @@ if st.session_state.step == 1:
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
+    # If we have a cached hit for the current unknown_index, don't alter context_search_idx
+    try:
+        _cur = int(st.session_state.get('unknown_index', 0))
+        _map = st.session_state.get('preview_hit_idx_map', {}) or {}
+        if _cur in _map and st.session_state.get('context_search_idx') is None:
+            st.session_state.context_search_idx = max(0, int(_map[_cur]))
+    except Exception:
+        pass
+    # __guard_restored_context__
     # ===== Ensure frequent-speaker data is ready (even on first entry to Step 2) =====
     # This mirrors the rebuild that happens during auto_load(), so the 'Frequent speakers' buttons
     # appear without needing to click 'Load saved progress'.
