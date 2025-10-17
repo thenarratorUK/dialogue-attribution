@@ -241,8 +241,7 @@ def auto_load():
                 # Fallback: clear if malformed
                 st.session_state.preview_hit_idx_map = {}
         if 'context_search_idx' in st.session_state and st.session_state.context_search_idx is None:
-            st.session_state.context_search_idx = 0
-        if 'last_rendered_unknown_index' in st.session_state and st.session_state.last_rendered_unknown_index is None:
+            st.session_state.quotes_uploaded = False  # auto-extract
             st.session_state.last_rendered_unknown_index = 0
         # __restore_context_state__
             # Normalise restored structures
@@ -819,6 +818,7 @@ if st.session_state.step == 1:
                     restart_app()
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
+                    st.session_state.quotes_uploaded = True
                     # Determine first unresolved 'Unknown' line
                     try:
                         _pat_header = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):(.*)$')
@@ -831,69 +831,55 @@ if st.session_state.step == 1:
                             if _m.group(1).strip().lower() == "unknown":
                                 _first_unknown = _j
                                 break
-                        st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
-                    except Exception:
-                        if st.session_state.docx_only:
-                            st.session_state.unknown_index = 0
-                            st.session_state.context_search_idx = 0
-                            st.session_state.preview_hit_idx_map = {}
-                            st.session_state.last_rendered_unknown_index = 0
-                        else:
-                            # Determine first unresolved 'Unknown' line (for quotes+docx path)
-                            try:
-                                _pat_header = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):(.*)$')
-                                _ql = st.session_state.get("quotes_lines") or []
-                                _first_unknown = None
-                                for _j, _q in enumerate(_ql):
-                                    _m = _pat_header.match(_q)
-                                    if not _m:
-                                        continue
-                                    if _m.group(1).strip().lower() == "unknown":
-                                        _first_unknown = _j
-                                        break
-                                st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
-                            except Exception:
-                                st.session_state.unknown_index = 0
-                        # === Occurrence-rank initial context resolution (Strategy A) ===
+                        # -- first unresolved “Unknown” line -----------------
                         try:
-                            quotes = st.session_state.get("quotes_lines") or []
-                            idx = int(st.session_state.get("unknown_index", 0))
-                            docx_path = st.session_state.get("docx_path")
-                            if not quotes or docx_path is None:
-                                raise RuntimeError("No quotes or DOCX path available for occurrence-rank initialisation.")
-                            _pat = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+[^:]+:(.*)$')
-                            def _norm_dialogue_text(s: str) -> str:
-                                return normalize_text(s).lower().strip()
-                            m_cur = _pat.match(quotes[idx]) if 0 <= idx < len(quotes) else None
-                            if not m_cur:
-                                raise RuntimeError("Unable to parse current dialogue line for occurrence-rank initialisation.")
-                            target_dialogue_norm = _norm_dialogue_text(m_cur.group(1))
-                            prior = 0
-                            for q in quotes[:idx]:
-                                m_prev = _pat.match(q)
-                                if not m_prev:
-                                    continue
-                                if _norm_dialogue_text(m_prev.group(1)) == target_dialogue_norm:
-                                    prior += 1
-                            k = prior + 1
-                            from docx import Document
-                            doc = Document(docx_path)
-                            hits = []
-                            for p_i, para in enumerate(doc.paragraphs):
-                                if target_dialogue_norm in _norm_dialogue_text(para.text):
-                                    hits.append(p_i)
-                                if len(hits) >= k:
-                                    break
-                            if len(hits) >= k:
-                                hit_para = hits[k-1]
-                                hit_map = st.session_state.get("preview_hit_idx_map", {}) or {}
-                                hit_map[idx] = hit_para
-                                st.session_state.preview_hit_idx_map = {int(k): int(v) for k, v in hit_map.items()}
-                                st.session_state.context_search_idx = int(hit_para)
-                                st.session_state.last_rendered_unknown_index = int(idx)
+                            _pat_header = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):(.*)$')
+                            _ql = st.session_state.get("quotes_lines") or []
+                            _first_unknown = next(
+                                (j for j, q in enumerate(_ql)
+                                 if (_m := _pat_header.match(q)) and _m.group(1).strip().lower() == "unknown"),
+                                None
+                            )
+                            st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
                         except Exception:
-                            pass
-                        # === End occurrence-rank initialisation ===
+                            st.session_state.unknown_index = 0
+
+                        # --- Occurrence-rank initial context resolution (Strategy A) ---
+                        if st.session_state.quotes_uploaded:  # <-- guard
+                            try:
+                                quotes = st.session_state.quotes_lines or []
+                                idx = st.session_state.unknown_index
+                                docx_path = st.session_state.docx_path
+                                if not quotes or docx_path is None:
+                                    raise RuntimeError("Missing data for occurrence-rank initialisation.")
+
+                                _pat = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+[^:]+:(.*)$')
+                                _norm = lambda s: normalize_text(s).lower().strip()
+                                m_cur = _pat.match(quotes[idx]) if 0 <= idx < len(quotes) else None
+                                if m_cur:
+                                    target = _norm(m_cur.group(1))
+                                    prior = sum(
+                                        1 for q in quotes[:idx]
+                                        if (_m := _pat.match(q)) and _norm(_m.group(1)) == target
+                                    )
+                                    k = prior + 1
+
+                                    from docx import Document
+                                    doc = Document(docx_path)
+                                    occ = 0
+                                    for p_i, para in enumerate(doc.paragraphs):
+                                        if target and target in _norm(para.text):
+                                            occ += 1
+                                            if occ == k:
+                                                hit_map = st.session_state.get("preview_hit_idx_map", {}) or {}
+                                                hit_map[idx] = p_i
+                                                st.session_state.preview_hit_idx_map = hit_map
+                                                st.session_state.context_search_idx = p_i
+                                                st.session_state.last_rendered_unknown_index = idx
+                                                break
+                            except Exception:
+                                # leave context_search_idx unset on failure
+                                pass
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
@@ -902,6 +888,7 @@ if st.session_state.step == 1:
                 dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
                 st.session_state.quotes_lines = [line + "\n" for line in dialogue_list]
                 st.session_state.docx_only = True
+                st.session_state.quotes_uploaded = False
                 st.success("Quotes extracted from DOCX.")
                 quotes_txt = "\n".join(dialogue_list)
                 st.download_button("Download Extracted Quotes TXT", quotes_txt.encode("utf-8"),
@@ -910,12 +897,60 @@ if st.session_state.step == 1:
                     restart_app()
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
-                    st.session_state.unknown_index = 0
-                    st.session_state.context_search_idx = 0
-                    st.session_state.preview_hit_idx_map = {}
-                    st.session_state.last_rendered_unknown_index = 0
+                    st.session_state.quotes_uploaded = True
+                    # -- first unresolved “Unknown” line -----------------
+                    try:
+                        _pat_header = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):(.*)$')
+                        _ql = st.session_state.get("quotes_lines") or []
+                        _first_unknown = next(
+                            (j for j, q in enumerate(_ql)
+                             if (_m := _pat_header.match(q)) and _m.group(1).strip().lower() == "unknown"),
+                            None
+                        )
+                        st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
+                    except Exception:
+                        st.session_state.unknown_index = 0
+
+                    # --- Occurrence-rank initial context resolution (Strategy A) ---
+                    if st.session_state.quotes_uploaded:  # <-- guard
+                        try:
+                            quotes = st.session_state.quotes_lines or []
+                            idx = st.session_state.unknown_index
+                            docx_path = st.session_state.docx_path
+                            if not quotes or docx_path is None:
+                                raise RuntimeError("Missing data for occurrence-rank initialisation.")
+
+                            _pat = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+[^:]+:(.*)$')
+                            _norm = lambda s: normalize_text(s).lower().strip()
+                            m_cur = _pat.match(quotes[idx]) if 0 <= idx < len(quotes) else None
+                            if m_cur:
+                                target = _norm(m_cur.group(1))
+                                prior = sum(
+                                    1 for q in quotes[:idx]
+                                    if (_m := _pat.match(q)) and _norm(_m.group(1)) == target
+                                )
+                                k = prior + 1
+
+                                from docx import Document
+                                doc = Document(docx_path)
+                                occ = 0
+                                for p_i, para in enumerate(doc.paragraphs):
+                                    if target and target in _norm(para.text):
+                                        occ += 1
+                                        if occ == k:
+                                            hit_map = st.session_state.get("preview_hit_idx_map", {}) or {}
+                                            hit_map[idx] = p_i
+                                            st.session_state.preview_hit_idx_map = hit_map
+                                            st.session_state.context_search_idx = p_i
+                                            st.session_state.last_rendered_unknown_index = idx
+                                            break
+                        except Exception:
+                            # leave context_search_idx unset on failure
+                            pass
 # === Occurrence-rank initial context resolution (Strategy A) ===
                     try:
+                        if not st.session_state.get("quotes_uploaded", False):
+                            raise RuntimeError("Skip Strategy A for docx-only run")
                         quotes = st.session_state.get("quotes_lines") or []
                         idx = int(st.session_state.get("unknown_index", 0))
                         docx_path = st.session_state.get("docx_path")
@@ -979,76 +1014,66 @@ if st.session_state.step == 1:
                     quotes_text = quotes_file.read().decode("utf-8")
                     st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
                     st.session_state.docx_only = False
+                    st.session_state.quotes_uploaded = True
                 else:
                     st.session_state.quotes_lines = None
                     st.session_state.docx_only = True
+                    st.session_state.quotes_uploaded = False
                 if speaker_colors_file is not None:
                     raw = json.load(speaker_colors_file)
                     st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
                     save_speaker_colors(st.session_state.existing_speaker_colors)
                 else:
                     st.session_state.existing_speaker_colors = {}
-                if st.session_state.docx_only:
-                    st.session_state.unknown_index = 0
-                    st.session_state.context_search_idx = 0
-                    st.session_state.preview_hit_idx_map = {}
-                    st.session_state.last_rendered_unknown_index = 0
-                else:
-                    # Determine first unresolved 'Unknown' line (for quotes+docx path)
-                    try:
-                        _pat_header = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):(.*)$')
-                        _ql = st.session_state.get("quotes_lines") or []
-                        _first_unknown = None
-                        for _j, _q in enumerate(_ql):
-                            _m = _pat_header.match(_q)
-                            if not _m:
-                                continue
-                            if _m.group(1).strip().lower() == "unknown":
-                                _first_unknown = _j
-                                break
-                        st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
-                    except Exception:
-                        st.session_state.unknown_index = 0
-                # === Occurrence-rank initial context resolution (Strategy A) ===
+                # -- first unresolved “Unknown” line -----------------
                 try:
-                    quotes = st.session_state.get("quotes_lines") or []
-                    idx = int(st.session_state.get("unknown_index", 0))
-                    docx_path = st.session_state.get("docx_path")
-                    if not quotes or docx_path is None:
-                        raise RuntimeError("No quotes or DOCX path available for occurrence-rank initialisation.")
-                    _pat = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+[^:]+:(.*)$')
-                    def _norm_dialogue_text(s: str) -> str:
-                        return normalize_text(s).lower().strip()
-                    m_cur = _pat.match(quotes[idx]) if 0 <= idx < len(quotes) else None
-                    if not m_cur:
-                        raise RuntimeError("Unable to parse current dialogue line for occurrence-rank initialisation.")
-                    target_dialogue_norm = _norm_dialogue_text(m_cur.group(1))
-                    prior = 0
-                    for q in quotes[:idx]:
-                        m_prev = _pat.match(q)
-                        if not m_prev:
-                            continue
-                        if _norm_dialogue_text(m_prev.group(1)) == target_dialogue_norm:
-                            prior += 1
-                    k = prior + 1
-                    from docx import Document
-                    doc = Document(docx_path)
-                    hits = []
-                    for p_i, para in enumerate(doc.paragraphs):
-                        if target_dialogue_norm in _norm_dialogue_text(para.text):
-                            hits.append(p_i)
-                        if len(hits) >= k:
-                            break
-                    if len(hits) >= k:
-                        hit_para = hits[k-1]
-                        hit_map = st.session_state.get("preview_hit_idx_map", {}) or {}
-                        hit_map[idx] = hit_para
-                        st.session_state.preview_hit_idx_map = {int(k): int(v) for k, v in hit_map.items()}
-                        st.session_state.context_search_idx = int(hit_para)
-                        st.session_state.last_rendered_unknown_index = int(idx)
+                    _pat_header = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):(.*)$')
+                    _ql = st.session_state.get("quotes_lines") or []
+                    _first_unknown = next(
+                        (j for j, q in enumerate(_ql)
+                         if (_m := _pat_header.match(q)) and _m.group(1).strip().lower() == "unknown"),
+                        None
+                    )
+                    st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
                 except Exception:
-                    pass
-                # === End occurrence-rank initialisation ===
+                    st.session_state.unknown_index = 0
+
+                # --- Occurrence-rank initial context resolution (Strategy A) ---
+                if st.session_state.quotes_uploaded:  # <-- guard
+                    try:
+                        quotes = st.session_state.quotes_lines or []
+                        idx = st.session_state.unknown_index
+                        docx_path = st.session_state.docx_path
+                        if not quotes or docx_path is None:
+                            raise RuntimeError("Missing data for occurrence-rank initialisation.")
+
+                        _pat = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+[^:]+:(.*)$')
+                        _norm = lambda s: normalize_text(s).lower().strip()
+                        m_cur = _pat.match(quotes[idx]) if 0 <= idx < len(quotes) else None
+                        if m_cur:
+                            target = _norm(m_cur.group(1))
+                            prior = sum(
+                                1 for q in quotes[:idx]
+                                if (_m := _pat.match(q)) and _norm(_m.group(1)) == target
+                            )
+                            k = prior + 1
+
+                            from docx import Document
+                            doc = Document(docx_path)
+                            occ = 0
+                            for p_i, para in enumerate(doc.paragraphs):
+                                if target and target in _norm(para.text):
+                                    occ += 1
+                                    if occ == k:
+                                        hit_map = st.session_state.get("preview_hit_idx_map", {}) or {}
+                                        hit_map[idx] = p_i
+                                        st.session_state.preview_hit_idx_map = hit_map
+                                        st.session_state.context_search_idx = p_i
+                                        st.session_state.last_rendered_unknown_index = idx
+                                        break
+                    except Exception:
+                        # leave context_search_idx unset on failure
+                        pass
                 st.session_state.console_log = []
                 if st.session_state.docx_only:
                     st.session_state.step = 1
@@ -1112,8 +1137,7 @@ elif st.session_state.step == 2:
 
     # ===== Preview state initialisation =====
     if "context_search_idx" not in st.session_state:
-        st.session_state.context_search_idx = 0
-    if "preview_hit_idx_map" not in st.session_state:
+        st.session_state.quotes_uploaded = False  # auto-extract
         st.session_state.preview_hit_idx_map = {}
     if "last_rendered_unknown_index" not in st.session_state:
         st.session_state.last_rendered_unknown_index = st.session_state.get("unknown_index", 0)
