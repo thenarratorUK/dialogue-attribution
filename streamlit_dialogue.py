@@ -5,63 +5,6 @@ import json
 import tempfile
 import mammoth
 import docx
-# --- Helper: reseed preview context marker when entering Step 2 from elsewhere ---
-def reseed_context_marker_for_current_unknown():
-    """
-    Recompute context_search_idx for the current unknown dialogue by counting
-    prior identical unknown lines and positioning the marker just after the
-    Nth match in the DOCX. This runs only when we *enter* Step 2 (from Step 1
-    or after Load Saved Progress), not during Step 2 interaction.
-    """
-    try:
-        doc = docx.Document(st.session_state.docx_path)
-    except Exception:
-        return
-
-    quotes = st.session_state.get("quotes_lines") or []
-    ui = int(st.session_state.get("unknown_index", 0))
-    if ui < 0 or ui >= len(quotes):
-        return
-
-    # Extract the current unknown dialogue text (best-effort keys)
-    q = quotes[ui]
-    # try common key names
-    text = q.get("dialogue") or q.get("text") or q.get("line") or ""
-    if not text:
-        return
-
-    target = normalize_text(text).lower().strip()
-    if not target:
-        return
-
-    # Count prior occurrences of the *same* line among earlier quotes
-    n_prior = 0
-    for j in range(0, ui):
-        qj = quotes[j]
-        tj = normalize_text(qj.get("dialogue") or qj.get("text") or qj.get("line") or "").lower().strip()
-        if tj == target:
-            n_prior += 1
-
-    # Scan DOCX to position marker just after the n_prior-th match
-    matches_seen = 0
-    new_marker = 0
-    for idx, para in enumerate(doc.paragraphs):
-        para_norm = normalize_text(para.text).lower()
-        if target and target in para_norm:
-            if matches_seen == n_prior:
-                # We want the next preview to find the (n_prior+1)th occurrence,
-                # so set marker to start from here (not after); the preview will find this one.
-                new_marker = idx
-                break
-            matches_seen += 1
-    else:
-        # If not found, leave marker unchanged
-        return
-
-    # Apply: reset preview cache and set marker
-    st.session_state.context_search_idx = new_marker
-    st.session_state.preview_hit_idx_map = {}
-
 import base64
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
@@ -214,6 +157,51 @@ def get_unmatched_quotes_filename():
     return f"{st.session_state.userkey}-unmatched_quotes.txt"
 
 def normalize_text(text):
+
+def regen_ctx_marker_for_current_unknown():
+    """Minimal: set context_search_idx to just after the Nth occurrence of current unknown dialogue."""
+    try:
+        doc = docx.Document(st.session_state.docx_path)
+    except Exception:
+        return
+    quotes = st.session_state.get("quotes_lines") or []
+    ui = int(st.session_state.get("unknown_index", 0))
+    if not (0 <= ui < len(quotes)):
+        return
+    # Extract line text
+    cur = quotes[ui]
+    if isinstance(cur, dict):
+        line = cur.get("line") or cur.get("dialogue") or ""
+    else:
+        line = str(cur) if cur is not None else ""
+    target = normalize_text(line).lower().strip()
+    if not target:
+        return
+    # Count prior identicals
+    prior = 0
+    for k in range(ui):
+        prev = quotes[k]
+        if isinstance(prev, dict):
+            txt = prev.get("line") or prev.get("dialogue") or ""
+        else:
+            txt = str(prev) if prev is not None else ""
+        if normalize_text(txt).lower().strip() == target:
+            prior += 1
+    nth = prior + 1
+    # Find nth in DOCX
+    count = 0
+    for idx, p in enumerate(doc.paragraphs):
+        if target in normalize_text(p.text).lower():
+            count += 1
+            if count == nth:
+                st.session_state.context_search_idx = idx + 1
+                # Clear any stale preview cache keys if they exist
+                if "preview_hit_idx_map" in st.session_state:
+                    st.session_state.preview_hit_idx_map = {}
+                if "last_rendered_unknown_index" in st.session_state:
+                    st.session_state.last_rendered_unknown_index = ui
+                return
+
     text = text.replace("\u00A0", " ")
     text = text.replace("…", "...")
     text = text.replace("“", "\"").replace("”", "\"")
@@ -330,6 +318,10 @@ def auto_load():
 
 if os.path.exists(get_progress_file()):
     if st.button("Load Saved Progress"):
+
+    # Ensure correct preview index after loading
+    if st.session_state.get('step', 1) == 2:
+        regen_ctx_marker_for_current_unknown()
          auto_load()
          st.rerun()
 
@@ -857,15 +849,13 @@ if st.session_state.step == 1:
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
-                    st.session_state.step2_resynced_for = set()
                     st.session_state.context_search_idx = 0
                     st.session_state.preview_hit_idx_map = {}
                     st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
-                    
-st.session_state.entered_step2_needs_reseed = True
-auto_save()
+                    regen_ctx_marker_for_current_unknown()
+                    auto_save()
                     st.rerun()
             else:
                 dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
@@ -880,15 +870,13 @@ auto_save()
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
-                    st.session_state.step2_resynced_for = set()
                     st.session_state.context_search_idx = 0
                     st.session_state.preview_hit_idx_map = {}
                     st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
-                    
-st.session_state.entered_step2_needs_reseed = True
-auto_save()
+                    regen_ctx_marker_for_current_unknown()
+                    auto_save()
                     st.rerun()
         else:
             pass
@@ -920,7 +908,6 @@ auto_save()
                 else:
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
-                st.session_state.step2_resynced_for = set()
                 st.session_state.context_search_idx = 0
                 st.session_state.preview_hit_idx_map = {}
                 st.session_state.last_rendered_unknown_index = 0
@@ -929,80 +916,12 @@ auto_save()
                     st.session_state.step = 1
                 else:
                     st.session_state.step = 2
-                
-st.session_state.entered_step2_needs_reseed = True
-auto_save()
+                regen_ctx_marker_for_current_unknown()
+                auto_save()
                 st.rerun()
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
-
-    # If we just entered Step 2 from outside, reseed the context marker once
-    if st.session_state.get("entered_step2_needs_reseed"):
-        try:
-            reseed_context_marker_for_current_unknown()
-        finally:
-            st.session_state.entered_step2_needs_reseed = False
-    # ===== Preview state initialisation & entry resync =====
-    if "context_search_idx" not in st.session_state:
-        st.session_state.context_search_idx = 0
-    if "preview_hit_idx_map" not in st.session_state:
-        st.session_state.preview_hit_idx_map = {}
-    if "last_rendered_unknown_index" not in st.session_state:
-        st.session_state.last_rendered_unknown_index = st.session_state.get("unknown_index", 0)
-    else:
-        # Commit previous hit when moving to a new unknown
-        if st.session_state.get("unknown_index", 0) != st.session_state.last_rendered_unknown_index:
-            _prev = st.session_state.last_rendered_unknown_index
-            _map = st.session_state.get("preview_hit_idx_map", {})
-            if _prev in _map:
-                st.session_state.context_search_idx = _map.pop(_prev) + 1
-            st.session_state.last_rendered_unknown_index = st.session_state.get("unknown_index", 0)
-
-    # One-time resync when entering Step 2 (from Step 1 or Load Progress)
-    if "step2_resynced_for" not in st.session_state:
-        st.session_state.step2_resynced_for = set()
-    _current_ui = st.session_state.get("unknown_index", 0)
-    if _current_ui not in st.session_state.step2_resynced_for:
-        try:
-            # Determine how many times this exact dialogue appeared before current_ui
-            quotes = st.session_state.get("quotes_lines") or []
-            # Extractor for various shapes
-            def _extract_text(q):
-                if isinstance(q, dict):
-                    for _k in ("dialogue", "text", "quote", "content", "line_text"):
-                        if _k in q and q[_k]:
-                            return str(q[_k])
-                    if "line" in q and isinstance(q["line"], (list, tuple)) and q["line"]:
-                        return str(q["line"][0])
-                return str(q)
-            _dlg = ""
-            if 0 <= _current_ui < len(quotes):
-                _dlg = _extract_text(quotes[_current_ui])
-            _target = normalize_text(_dlg).lower().strip()
-            if _target:
-                # Count prior occurrences in quotes_lines
-                _prior = 0
-                for _q in quotes[:_current_ui]:
-                    if normalize_text(_extract_text(_q)).lower().strip() == _target:
-                        _prior += 1
-                if _prior > 0:
-                    # Seek to after the (_prior)-th match in DOCX
-                    _doc = docx.Document(st.session_state.docx_path)
-                    _seen = 0
-                    _idx_after = 0
-                    for _i, _p in enumerate(_doc.paragraphs):
-                        if _target in normalize_text(_p.text).lower():
-                            _seen += 1
-                            if _seen == _prior:
-                                _idx_after = _i + 1
-                                break
-                    if _idx_after:
-                        st.session_state.context_search_idx = _idx_after
-            st.session_state.step2_resynced_for.add(_current_ui)
-        except Exception:
-            pass
-    # =======================================================
 
     # ===== Preview state initialisation =====
     if "context_search_idx" not in st.session_state:
@@ -1049,103 +968,15 @@ elif st.session_state.step == 2:
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
         def get_context_for_dialogue(dialogue):
             """
-            Preview context builder (idempotent, moving-marker).
+            Preview context builder (idempotent).
             - Does NOT advance context_search_idx during render.
-            - Caches the matched paragraph index per unknown_index.
-            Marker advancement is committed when unknown_index changes (handled in Step 2 init).
+            - Caches the matched paragraph index per unknown_index to avoid double-search and rerun glitches.
+            Marker advancement is committed when unknown_index changes (handled in Step 2 init block).
             """
             try:
                 doc = docx.Document(st.session_state.docx_path)
             except Exception:
                 return None
-        
-            target = normalize_text(dialogue).lower().strip()
-            if not target:
-                return None
-        
-            current_ui = st.session_state.get("unknown_index", 0)
-            hit_map = st.session_state.get("preview_hit_idx_map", {})
-        
-            # Reuse cached location if we have it
-            if current_ui in hit_map:
-                idx = hit_map[current_ui]
-                prev_txt = doc.paragraphs[idx - 1].text if idx > 0 else ""
-                cur_txt  = doc.paragraphs[idx].text
-                next_txt = doc.paragraphs[idx + 1].text if idx + 1 < len(doc.paragraphs) else ""
-                pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", cur_txt, count=1)
-                return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
-        
-            # Otherwise, search forward starting at the moving marker
-            start_idx = int(st.session_state.get("context_search_idx", 0))
-            for idx in range(start_idx, len(doc.paragraphs)):
-                para_text_raw = doc.paragraphs[idx].text
-                para_text_norm = normalize_text(para_text_raw).lower()
-                if target in para_text_norm:
-                    # Cache hit for this unknown_index; do not advance marker here
-                    hit_map[current_ui] = idx
-                    st.session_state.preview_hit_idx_map = hit_map
-                    prev_txt = doc.paragraphs[idx - 1].text if idx > 0 else ""
-                    next_txt = doc.paragraphs[idx + 1].text if idx + 1 < len(doc.paragraphs) else ""
-                    pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                    cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para_text_raw, count=1)
-                    return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
-        
-            return None
-        
-            target = normalize_text(dialogue).lower().strip()
-            if not target:
-                return None
-        
-            current_ui = st.session_state.get("unknown_index", 0)
-            hit_map = st.session_state.get("preview_hit_idx_map", {})
-        
-            # Reuse cached location if we have it
-            if current_ui in hit_map:
-                idx_hit = hit_map[current_ui]
-                prev_txt = doc.paragraphs[idx_hit - 1].text if idx_hit > 0 else ""
-                cur_txt  = doc.paragraphs[idx_hit].text
-                next_txt = doc.paragraphs[idx_hit + 1].text if idx_hit + 1 < len(doc.paragraphs) else ""
-                pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", cur_txt, count=1)
-                return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
-        
-            # Determine N = how many times this dialogue appears up to and including current_ui
-            quotes = st.session_state.get("quotes_lines") or []
-            def extract_text(q):
-                # Support multiple possible shapes
-                if isinstance(q, dict):
-                    for k in ("dialogue", "text", "quote", "content", "line_text"):
-                        if k in q and q[k]:
-                            return str(q[k])
-                    # Some structures store as tuple-like in 'line'
-                    if "line" in q and isinstance(q["line"], (list, tuple)) and q["line"]:
-                        return str(q["line"][0])
-                return str(q)
-            count_so_far = 0
-            for q in quotes[: current_ui + 1]:
-                if normalize_text(extract_text(q)).lower().strip() == target:
-                    count_so_far += 1
-            if count_so_far <= 0:
-                count_so_far = 1  # fall back to first occurrence
-        
-            # Find the N-th occurrence from the START of the doc
-            occ = 0
-            for idx_hit in range(0, len(doc.paragraphs)):
-                para_text_norm = normalize_text(doc.paragraphs[idx_hit].text).lower()
-                if target in para_text_norm:
-                    occ += 1
-                    if occ == count_so_far:
-                        hit_map[current_ui] = idx_hit
-                        st.session_state.preview_hit_idx_map = hit_map
-                        prev_txt = doc.paragraphs[idx_hit - 1].text if idx_hit > 0 else ""
-                        cur_txt  = doc.paragraphs[idx_hit].text
-                        next_txt = doc.paragraphs[idx_hit + 1].text if idx_hit + 1 < len(doc.paragraphs) else ""
-                        pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                        cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", cur_txt, count=1)
-                        return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
-        
-            return None
         
             target = normalize_text(dialogue).lower().strip()
             if not target:
@@ -1459,9 +1290,8 @@ elif st.session_state.step == 4:
             st.session_state.speaker_colors = colors
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
         st.session_state.step = 2
-        
-st.session_state.entered_step2_needs_reseed = True
-auto_save()
+        regen_ctx_marker_for_current_unknown()
+        auto_save()
         st.rerun() 
         # Add a Clear Cache button below "Return to Step 2"
     if st.button("Clear Cache for This User"):
