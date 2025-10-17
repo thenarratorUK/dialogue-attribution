@@ -980,10 +980,7 @@ elif st.session_state.step == 2:
                 flagged_sorted = sorted(st.session_state.flagged_names)
                 flagged_sorted = [n for n in flagged_sorted if n.lower() != "unknown"]
                 st.caption("Frequent speakers:")
-                NUM_COLS = 2
-                num_cols = max(1, min(NUM_COLS, len(flagged_sorted)))
-                cols = st.columns(num_cols)
-                cmap = st.session_state.get("canonical_map") or {}
+                NUM_COLS = 4
                 for i, norm in enumerate(flagged_sorted):
                     display_name = cmap.get(norm, norm.title())
                     if cols[i % 4].button(display_name, key=f"flagged_{norm}"):
