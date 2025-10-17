@@ -894,8 +894,13 @@ elif st.session_state.step == 2:
     try:
         _cur = int(st.session_state.get('unknown_index', 0))
         _map = st.session_state.get('preview_hit_idx_map', {}) or {}
-        if _cur in _map and st.session_state.get('context_search_idx') is None:
-            st.session_state.context_search_idx = max(0, int(_map[_cur]))
+        if _cur in _map:
+            _cached = int(_map[_cur])
+            _current = st.session_state.get('context_search_idx')
+            if _current is None or not isinstance(_current, int):
+                st.session_state.context_search_idx = max(0, _cached)
+            else:
+                st.session_state.context_search_idx = max(0, min(int(_current), _cached))
     except Exception:
         pass
     # __guard_restored_context__
@@ -963,6 +968,18 @@ elif st.session_state.step == 2:
     def get_next_unknown_line():
         quotes = st.session_state.get("quotes_lines")
         if quotes is None:
+            # Fallback: retry from the beginning if forward scan fails
+            for idx in range(0, len(doc.paragraphs)):
+                para_text_raw = doc.paragraphs[idx].text
+                para_text_norm = normalize_text(para_text_raw).lower()
+                if target in para_text_norm:
+                    hit_map[current_ui] = idx
+                    st.session_state.preview_hit_idx_map = hit_map
+                    prev_txt = doc.paragraphs[idx - 1].text if idx > 0 else ""
+                    next_txt = doc.paragraphs[idx + 1].text if idx + 1 < len(doc.paragraphs) else ""
+                    pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
+                    cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para_text_raw, count=1)
+                    return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
             return None, None, None
         pattern = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]+)(:.*)$")
         for i in range(st.session_state.unknown_index, len(quotes)):
