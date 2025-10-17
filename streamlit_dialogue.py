@@ -230,6 +230,13 @@ def auto_load():
                 st.session_state.flagged_names = set(st.session_state.flagged_names)
             if st.session_state.get("speaker_counts") is None:
                 st.session_state.speaker_counts = {}
+                # Update flagged_names after speaker_counts changes
+                counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
+                flagged = set()
+                for norm, c in counts_cap10.items():
+                    if c >= 10:
+                        flagged.add(norm)
+                st.session_state.flagged_names = flagged
             if st.session_state.get("flagged_names") is None:
                 st.session_state.flagged_names = set()
             if st.session_state.get("canonical_map") is None:
@@ -260,6 +267,13 @@ def auto_load():
                         if c >= 10:
                             flagged.add(norm)
                 st.session_state.speaker_counts = counts_cap10
+                # Update flagged_names after speaker_counts changes
+                counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
+                flagged = set()
+                for norm, c in counts_cap10.items():
+                    if c >= 10:
+                        flagged.add(norm)
+                st.session_state.flagged_names = flagged
                 st.session_state.flagged_names = flagged
 
         if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
@@ -804,13 +818,6 @@ if st.session_state.step == 1:
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
                     st.session_state.console_log = []
-                    # Update flagged_names after parsing and speaker counting
-                    counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
-                    flagged = set()
-                    for norm, c in counts_cap10.items():
-                        if c >= 10:
-                            flagged.add(norm)
-                    st.session_state.flagged_names = flagged
                     st.session_state.step = 2
                     auto_save()
                     st.rerun()
@@ -960,14 +967,35 @@ elif st.session_state.step == 2:
                     norm = normalize_speaker_name(updated_speaker)
                     if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
                         st.session_state.speaker_counts = {}
+                        # Update flagged_names after speaker_counts changes
+                        counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
+                        flagged = set()
+                        for norm, c in counts_cap10.items():
+                            if c >= 10:
+                                flagged.add(norm)
+                        st.session_state.flagged_names = flagged
                     if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
                         st.session_state.flagged_names = set()
                     if norm not in st.session_state.flagged_names:
                         new_cnt = st.session_state.speaker_counts.get(norm, 0) + 1
+                        # Update flagged_names after speaker_counts changes
+                        counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
+                        flagged = set()
+                        for norm, c in counts_cap10.items():
+                            if c >= 10:
+                                flagged.add(norm)
+                        st.session_state.flagged_names = flagged
                         if new_cnt >= 10:
                             new_cnt = 10
                             st.session_state.flagged_names.add(norm)
                         st.session_state.speaker_counts[norm] = new_cnt
+                        # Update flagged_names after speaker_counts changes
+                        counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
+                        flagged = set()
+                        for norm, c in counts_cap10.items():
+                            if c >= 10:
+                                flagged.add(norm)
+                        st.session_state.flagged_names = flagged
                 except Exception as _e:
                     pass
                 new_line = prefix + updated_speaker + remainder
