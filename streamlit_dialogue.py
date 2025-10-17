@@ -201,7 +201,6 @@ def auto_save():
         "quotes_lines": st.session_state.get("quotes_lines"),
         "speaker_colors": st.session_state.get("speaker_colors"),
         "unknown_index": st.session_state.get("unknown_index", 0),
-        "context_search_idx": st.session_state.get("context_search_idx", 0),
         "console_log": st.session_state.get("console_log", []),
         "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
@@ -802,6 +801,8 @@ if st.session_state.step == 1:
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
                     st.session_state.context_search_idx = 0
+                    st.session_state.preview_hit_idx_map = {}
+                    st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
@@ -820,6 +821,8 @@ if st.session_state.step == 1:
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
                     st.session_state.context_search_idx = 0
+                    st.session_state.preview_hit_idx_map = {}
+                    st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
@@ -855,6 +858,8 @@ if st.session_state.step == 1:
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
                 st.session_state.context_search_idx = 0
+                st.session_state.preview_hit_idx_map = {}
+                st.session_state.last_rendered_unknown_index = 0
                 st.session_state.console_log = []
                 if st.session_state.docx_only:
                     st.session_state.step = 1
@@ -865,9 +870,23 @@ if st.session_state.step == 1:
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
-    # Initialise the moving search marker for preview context (kept across sessions if auto-loaded)
+
+    # ===== Preview state initialisation =====
     if "context_search_idx" not in st.session_state:
-            st.session_state.context_search_idx = 0
+        st.session_state.context_search_idx = 0
+    if "preview_hit_idx_map" not in st.session_state:
+        st.session_state.preview_hit_idx_map = {}
+    if "last_rendered_unknown_index" not in st.session_state:
+        st.session_state.last_rendered_unknown_index = st.session_state.get("unknown_index", 0)
+    else:
+        # If the unknown index changed since last render, commit the previous preview hit
+        if st.session_state.get("unknown_index", 0) != st.session_state.last_rendered_unknown_index:
+            _prev = st.session_state.last_rendered_unknown_index
+            _map = st.session_state.get("preview_hit_idx_map", {})
+            if _prev in _map:
+                st.session_state.context_search_idx = _map.pop(_prev) + 1
+            st.session_state.last_rendered_unknown_index = st.session_state.get("unknown_index", 0)
+    # ========================================
     st.markdown("<h4>Step 2: Process Unknown Speakers</h4>", unsafe_allow_html=True)
     st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip', 'exit', or 'undo').")
     
@@ -895,12 +914,12 @@ elif st.session_state.step == 2:
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
-
-        def get_context_for_dialogue(dialogue: str):
+        def get_context_for_dialogue(dialogue):
             """
-            Returns context (previous/current/next) for the *next* occurrence of `dialogue`
-            in the DOCX, starting the search at st.session_state.context_search_idx.
-            This only affects the bold preview; it does NOT change your separate highlighting.
+            Preview context builder (idempotent).
+            - Does NOT advance context_search_idx during render.
+            - Caches the matched paragraph index per unknown_index to avoid double-search and rerun glitches.
+            Marker advancement is committed when unknown_index changes (handled in Step 2 init block).
             """
             try:
                 doc = docx.Document(st.session_state.docx_path)
@@ -908,32 +927,37 @@ elif st.session_state.step == 2:
                 return None
         
             target = normalize_text(dialogue).lower().strip()
-            start_idx = int(st.session_state.get("context_search_idx", 0))
+            if not target:
+                return None
         
-            # Scan FORWARD starting at the moving marker
+            current_ui = st.session_state.get("unknown_index", 0)
+            hit_map = st.session_state.get("preview_hit_idx_map", {})
+        
+            # If we already found a hit for this unknown_index, reuse it (no side-effects)
+            if current_ui in hit_map:
+                idx = hit_map[current_ui]
+                prev_txt = doc.paragraphs[idx - 1].text if idx > 0 else ""
+                cur_txt  = doc.paragraphs[idx].text
+                next_txt = doc.paragraphs[idx + 1].text if idx + 1 < len(doc.paragraphs) else ""
+                pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
+                cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", cur_txt, count=1)
+                return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
+        
+            # Otherwise, search forward starting at the moving marker
+            start_idx = int(st.session_state.get("context_search_idx", 0))
             for idx in range(start_idx, len(doc.paragraphs)):
                 para_text_raw = doc.paragraphs[idx].text
                 para_text_norm = normalize_text(para_text_raw).lower()
-        
-                if target and target in para_text_norm:
-                    context = {}
-                    if idx > 0:
-                        context["previous"] = doc.paragraphs[idx - 1].text
-        
-                    # Keep your current bold-preview style: first visible match only
+                if target in para_text_norm:
+                    # Cache hit for this unknown_index; do not advance marker here
+                    hit_map[current_ui] = idx
+                    st.session_state.preview_hit_idx_map = hit_map  # ensure persistence across reruns
+                    prev_txt = doc.paragraphs[idx - 1].text if idx > 0 else ""
+                    next_txt = doc.paragraphs[idx + 1].text if idx + 1 < len(doc.paragraphs) else ""
                     pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                    highlighted = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para_text_raw, count=1)
-                    context["current"] = highlighted
+                    cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para_text_raw, count=1)
+                    return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
         
-                    if idx + 1 < len(doc.paragraphs):
-                        context["next"] = doc.paragraphs[idx + 1].text
-        
-                    # Advance the marker so next call starts *after* this paragraph
-                    st.session_state.context_search_idx = idx + 1
-        
-                    return context
-        
-            # If inputs are strictly in order, we shouldn't fall through.
             return None
         context = get_context_for_dialogue(dialogue)
         if context:
