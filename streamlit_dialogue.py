@@ -158,6 +158,59 @@ def get_unmatched_quotes_filename():
 
 def normalize_text(text):
 
+
+def regen_ctx_marker_for_current_unknown():
+    """
+    Set context_search_idx to just after the Nth occurrence of the current unknown dialogue.
+    N = number of times the same dialogue appeared earlier in quotes_lines + 1.
+    Called only when entering Step 2 (including Load Saved Progress).
+    """
+    try:
+        doc = docx.Document(st.session_state.docx_path)
+    except Exception:
+        return
+
+    quotes = st.session_state.get("quotes_lines") or []
+    ui = int(st.session_state.get("unknown_index", 0))
+    if not (0 <= ui < len(quotes)):
+        return
+
+    # Get current dialogue text
+    cur = quotes[ui]
+    if isinstance(cur, dict):
+        line = cur.get("line") or cur.get("dialogue") or ""
+    else:
+        line = str(cur) if cur is not None else ""
+    target = normalize_text(line).lower().strip()
+    if not target:
+        return
+
+    # Count prior identicals
+    prior = 0
+    for k in range(ui):
+        prev = quotes[k]
+        if isinstance(prev, dict):
+            txt = prev.get("line") or prev.get("dialogue") or ""
+        else:
+            txt = str(prev) if prev is not None else ""
+        if normalize_text(txt).lower().strip() == target:
+            prior += 1
+    nth = prior + 1
+
+    # Find nth occurrence in DOCX
+    count = 0
+    for idx, p in enumerate(doc.paragraphs):
+        if target in normalize_text(p.text).lower():
+            count += 1
+            if count == nth:
+                st.session_state.context_search_idx = idx + 1
+                # Optional: clear any cached preview data
+                if "preview_hit_idx_map" in st.session_state:
+                    st.session_state.preview_hit_idx_map = {}
+                if "last_rendered_unknown_index" in st.session_state:
+                    st.session_state.last_rendered_unknown_index = ui
+                return
+
 def regen_ctx_marker_for_current_unknown():
     """
     Set context_search_idx to just after the Nth occurrence of the current unknown dialogue.
