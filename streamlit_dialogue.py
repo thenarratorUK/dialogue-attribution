@@ -865,7 +865,7 @@ if st.session_state.step == 1:
                     except Exception:
                         pass
                     # === End occurrence-rank initialisation ===
-st.session_state.step = 2
+                    st.session_state.step = 2
                     auto_save()
                     st.rerun()
             else:
