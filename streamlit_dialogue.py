@@ -213,12 +213,11 @@ def auto_save():
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
     with open(get_progress_file(), "w", encoding="utf-8") as f:
-        
-    # Ensure preview_hit_idx_map has string keys for JSON
-    if isinstance(data.get("preview_hit_idx_map"), dict):
-        data["preview_hit_idx_map"] = {str(k): int(v) for k, v in data["preview_hit_idx_map"].items()}
-    # __stringify_preview_keys__
-json.dump(data, f, indent=4)
+        # Ensure preview_hit_idx_map has string keys for JSON
+        if isinstance(data.get("preview_hit_idx_map"), dict):
+            data["preview_hit_idx_map"] = {str(k): int(v) for k, v in data["preview_hit_idx_map"].items()}
+        # __stringify_preview_keys__
+        json.dump(data, f, indent=4)
     if st.session_state.get("speaker_colors") is not None:
         with open(get_saved_colors_file(), "w", encoding="utf-8") as f:
             json.dump(st.session_state.speaker_colors, f, indent=4, ensure_ascii=False)
