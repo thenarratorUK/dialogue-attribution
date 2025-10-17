@@ -157,6 +157,13 @@ def get_unmatched_quotes_filename():
     return f"{st.session_state.userkey}-unmatched_quotes.txt"
 
 def normalize_text(text):
+    text = text.replace("\u00A0", " ")
+    text = text.replace("…", "...")
+    text = text.replace("“", "\"").replace("”", "\"")
+    text = text.replace("’", "'").replace("‘", "'")
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
 
 
 def regen_ctx_marker_for_current_unknown():
@@ -211,67 +218,6 @@ def regen_ctx_marker_for_current_unknown():
                     st.session_state.last_rendered_unknown_index = ui
                 return
 
-def regen_ctx_marker_for_current_unknown():
-    """
-    Set context_search_idx to just after the Nth occurrence of the current unknown dialogue.
-    Called when entering Step 2 (including Load Saved Progress). Minimal and top-level.
-    """
-    try:
-        doc = docx.Document(st.session_state.docx_path)
-    except Exception:
-        return
-
-    quotes = st.session_state.get("quotes_lines") or []
-    ui = int(st.session_state.get("unknown_index", 0))
-    if not (0 <= ui < len(quotes)):
-        return
-
-    # Extract current dialogue text
-    cur = quotes[ui]
-    if isinstance(cur, dict):
-        line = cur.get("line") or cur.get("dialogue") or ""
-    else:
-        line = str(cur) if cur is not None else ""
-    target = normalize_text(line).lower().strip()
-    if not target:
-        return
-
-    # Count prior identicals
-    prior = 0
-    for k in range(ui):
-        prev = quotes[k]
-        if isinstance(prev, dict):
-            txt = prev.get("line") or prev.get("dialogue") or ""
-        else:
-            txt = str(prev) if prev is not None else ""
-        if normalize_text(txt).lower().strip() == target:
-            prior += 1
-    nth = prior + 1
-
-    # Find nth occurrence in DOCX
-    count = 0
-    found_idx = None
-    for idx, p in enumerate(doc.paragraphs):
-        if target in normalize_text(p.text).lower():
-            count += 1
-            if count == nth:
-                found_idx = idx
-                break
-
-    if found_idx is not None:
-        st.session_state.context_search_idx = found_idx + 1
-        # Optional: clear any preview cache if present
-        if "preview_hit_idx_map" in st.session_state:
-            st.session_state.preview_hit_idx_map = {}
-        if "last_rendered_unknown_index" in st.session_state:
-            st.session_state.last_rendered_unknown_index = ui
-
-    text = text.replace("\u00A0", " ")
-    text = text.replace("…", "...")
-    text = text.replace("“", "\"").replace("”", "\"")
-    text = text.replace("’", "'").replace("‘", "'")
-    text = re.sub(r'\s+', ' ', text)
-    return text.strip()
 
 def match_normalize(text):
     return text.replace("’", "'").replace("‘", "'")
@@ -909,11 +855,10 @@ if st.session_state.step == 1:
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
-                    st.session_state.context_search_idx = 0
-                    st.session_state.preview_hit_idx_map = {}
-                    st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
+                    regen_ctx_marker_for_current_unknown()
+
                     auto_save()
                     st.rerun()
             else:
@@ -929,11 +874,10 @@ if st.session_state.step == 1:
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
-                    st.session_state.context_search_idx = 0
-                    st.session_state.preview_hit_idx_map = {}
-                    st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
+                    regen_ctx_marker_for_current_unknown()
+
                     auto_save()
                     st.rerun()
         else:
@@ -966,36 +910,18 @@ if st.session_state.step == 1:
                 else:
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
-                st.session_state.context_search_idx = 0
-                st.session_state.preview_hit_idx_map = {}
-                st.session_state.last_rendered_unknown_index = 0
                 st.session_state.console_log = []
                 if st.session_state.docx_only:
                     st.session_state.step = 1
                 else:
                     st.session_state.step = 2
+                    regen_ctx_marker_for_current_unknown()
+
                 auto_save()
                 st.rerun()
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
-
-    # ===== Preview state initialisation =====
-    if "context_search_idx" not in st.session_state:
-        st.session_state.context_search_idx = 0
-    if "preview_hit_idx_map" not in st.session_state:
-        st.session_state.preview_hit_idx_map = {}
-    if "last_rendered_unknown_index" not in st.session_state:
-        st.session_state.last_rendered_unknown_index = st.session_state.get("unknown_index", 0)
-    else:
-        # If the unknown index changed since last render, commit the previous preview hit
-        if st.session_state.get("unknown_index", 0) != st.session_state.last_rendered_unknown_index:
-            _prev = st.session_state.last_rendered_unknown_index
-            _map = st.session_state.get("preview_hit_idx_map", {})
-            if _prev in _map:
-                st.session_state.context_search_idx = _map.pop(_prev) + 1
-            st.session_state.last_rendered_unknown_index = st.session_state.get("unknown_index", 0)
-    # ========================================
     st.markdown("<h4>Step 2: Process Unknown Speakers</h4>", unsafe_allow_html=True)
     st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip', 'exit', or 'undo').")
     
@@ -1024,50 +950,25 @@ elif st.session_state.step == 2:
         dialogue = remainder.lstrip(": ").rstrip("\n")
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
         def get_context_for_dialogue(dialogue):
-            """
-            Preview context builder (idempotent).
-            - Does NOT advance context_search_idx during render.
-            - Caches the matched paragraph index per unknown_index to avoid double-search and rerun glitches.
-            Marker advancement is committed when unknown_index changes (handled in Step 2 init block).
-            """
             try:
                 doc = docx.Document(st.session_state.docx_path)
             except Exception:
                 return None
-        
-            target = normalize_text(dialogue).lower().strip()
-            if not target:
-                return None
-        
-            current_ui = st.session_state.get("unknown_index", 0)
-            hit_map = st.session_state.get("preview_hit_idx_map", {})
-        
-            # If we already found a hit for this unknown_index, reuse it (no side-effects)
-            if current_ui in hit_map:
-                idx = hit_map[current_ui]
-                prev_txt = doc.paragraphs[idx - 1].text if idx > 0 else ""
-                cur_txt  = doc.paragraphs[idx].text
-                next_txt = doc.paragraphs[idx + 1].text if idx + 1 < len(doc.paragraphs) else ""
-                pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", cur_txt, count=1)
-                return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
-        
-            # Otherwise, search forward starting at the moving marker
-            start_idx = int(st.session_state.get("context_search_idx", 0))
-            for idx in range(start_idx, len(doc.paragraphs)):
-                para_text_raw = doc.paragraphs[idx].text
-                para_text_norm = normalize_text(para_text_raw).lower()
-                if target in para_text_norm:
-                    # Cache hit for this unknown_index; do not advance marker here
-                    hit_map[current_ui] = idx
-                    st.session_state.preview_hit_idx_map = hit_map  # ensure persistence across reruns
-                    prev_txt = doc.paragraphs[idx - 1].text if idx > 0 else ""
-                    next_txt = doc.paragraphs[idx + 1].text if idx + 1 < len(doc.paragraphs) else ""
+            normalized_dialogue = normalize_text(dialogue).lower()
+            for idx, para in enumerate(doc.paragraphs):
+                para_text = normalize_text(para.text)
+                if normalized_dialogue in para_text.lower():
+                    context = {}
+                    if idx > 0:
+                        context['previous'] = doc.paragraphs[idx-1].text
                     pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                    cur_bold = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para_text_raw, count=1)
-                    return {"previous": prev_txt, "current": cur_bold, "next": next_txt}
-        
+                    highlighted = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para.text)
+                    context['current'] = highlighted
+                    if idx+1 < len(doc.paragraphs):
+                        context['next'] = doc.paragraphs[idx+1].text
+                    return context
             return None
+
         context = get_context_for_dialogue(dialogue)
         if context:
             if "previous" in context:
@@ -1347,6 +1248,8 @@ elif st.session_state.step == 4:
             st.session_state.speaker_colors = colors
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
         st.session_state.step = 2
+        regen_ctx_marker_for_current_unknown()
+
         auto_save()
         st.rerun() 
         # Add a Clear Cache button below "Return to Step 2"
