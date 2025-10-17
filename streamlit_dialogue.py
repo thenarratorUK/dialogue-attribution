@@ -205,6 +205,9 @@ def auto_save():
         "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
         "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
+        "context_search_idx": st.session_state.get("context_search_idx", 0),
+        "preview_hit_idx_map": st.session_state.get("preview_hit_idx_map", {}),
+        "last_rendered_unknown_index": st.session_state.get("last_rendered_unknown_index", st.session_state.get("unknown_index", 0)),
     }
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
@@ -234,6 +237,14 @@ def auto_load():
                 st.session_state.flagged_names = set()
             if st.session_state.get("canonical_map") is None:
                 st.session_state.canonical_map = {}
+
+        # --- Restore preview/context trackers with safe defaults ---
+        if 'context_search_idx' not in st.session_state or not isinstance(st.session_state.get('context_search_idx'), int):
+            st.session_state.context_search_idx = 0
+        if 'preview_hit_idx_map' not in st.session_state or not isinstance(st.session_state.get('preview_hit_idx_map'), dict):
+            st.session_state.preview_hit_idx_map = {}
+        if 'last_rendered_unknown_index' not in st.session_state or not isinstance(st.session_state.get('last_rendered_unknown_index'), int):
+            st.session_state.last_rendered_unknown_index = max(st.session_state.get('unknown_index', 0) - 1, 0)
 
             # Rebuild counts/flags from quotes_lines if missing or empty
             needs_rebuild = (
