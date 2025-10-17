@@ -845,27 +845,6 @@ if st.session_state.step == 1:
                     st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
                     st.session_state.docx_only = False
                 else:
-                    # Build flags if empty when a quotes TXT is provided
-                    if not st.session_state.get("flagged_names"):
-                        pattern_speaker = re.compile(r"^\s*\d+(?:[A-Za-z]+)?\.\s+([^:]+):")
-                        counts_cap10, flagged = {}, set()
-                        for _line in st.session_state.quotes_lines:
-                            m = pattern_speaker.match(_line.strip())
-                            if not m:
-                                continue
-                            sp = smart_title(m.group(1).strip())
-                            norm = normalize_speaker_name(sp)
-                            if norm in flagged:
-                                continue
-                            c = counts_cap10.get(norm, 0)
-                            if c < 10:
-                                c += 1
-                                counts_cap10[norm] = c
-                                if c >= 10:
-                                    flagged.add(norm)
-                        flagged.discard(normalize_speaker_name("Unknown"))
-                        st.session_state.speaker_counts = counts_cap10
-                        st.session_state.flagged_names = flagged
                     st.session_state.quotes_lines = None
                     st.session_state.docx_only = True
                 if speaker_colors_file is not None:
@@ -1006,6 +985,26 @@ elif st.session_state.step == 2:
         if submitted:
             process_unknown_input(new_name)
 
+        # Rebuild flags if empty at render time
+        if (not st.session_state.get("flagged_names")) and st.session_state.get("quotes_lines"):
+            pattern_speaker = re.compile(r"^\s*\d+(?:[A-Za-z]+)?\.\s+([^:]+):")
+            counts_cap10, flagged = {}, set()
+            for _line in st.session_state.quotes_lines:
+                m = pattern_speaker.match(_line.strip())
+                if not m:
+                    continue
+                sp = smart_title(m.group(1).strip())
+                norm = normalize_speaker_name(sp)
+                if norm in flagged:
+                    continue
+                c = counts_cap10.get(norm, 0)
+                if c < 10:
+                    c += 1
+                    counts_cap10[norm] = c
+                    if c >= 10:
+                        flagged.add(norm)
+            st.session_state.speaker_counts = counts_cap10
+            st.session_state.flagged_names = flagged
         # Frequent speakers (flagged, alphabetical). Buttons act like typing + Enter.
         try:
             if "flagged_names" in st.session_state and st.session_state.flagged_names:
