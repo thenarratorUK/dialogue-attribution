@@ -219,6 +219,43 @@ def auto_save():
             quotes_text = "".join(st.session_state.quotes_lines)
             f.write(quotes_text)
 
+
+
+def ensure_speaker_counts_and_flags():
+    """Ensure st.session_state.speaker_counts and st.session_state.flagged_names
+    are initialised and, if empty, rebuilt from quotes_lines. This mirrors the
+    rebuild logic previously embedded in auto_load(), and can be called when
+    entering Step 2 without requiring an explicit auto_load()."""
+    # Normalise containers
+    if st.session_state.get("speaker_counts") is None:
+        st.session_state.speaker_counts = {}
+    if st.session_state.get("flagged_names") is None:
+        st.session_state.flagged_names = set()
+    # Determine if a rebuild is required
+    needs_rebuild = (
+        not st.session_state.speaker_counts or
+        (not st.session_state.flagged_names and st.session_state.speaker_counts)
+    )
+    if needs_rebuild and st.session_state.get("quotes_lines"):
+        pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
+        counts_cap10 = {}
+        flagged = set()
+        for _line in st.session_state.quotes_lines:
+            m = pattern_speaker.match(_line.strip())
+            if not m:
+                continue
+            speaker_raw = m.group(1).strip()
+            effective = smart_title(speaker_raw)
+            norm = normalize_speaker_name(effective)
+            c = counts_cap10.get(norm, 0)
+            if c < 10:
+                c += 1
+                counts_cap10[norm] = c
+                if c >= 10:
+                    flagged.add(norm)
+        st.session_state.speaker_counts = counts_cap10
+        st.session_state.flagged_names = flagged
+
 def auto_load():
     if os.path.exists(get_progress_file()):
         with open(get_progress_file(), "r", encoding="utf-8") as f:
@@ -235,32 +272,9 @@ def auto_load():
             if st.session_state.get("canonical_map") is None:
                 st.session_state.canonical_map = {}
 
-            # Rebuild counts/flags from quotes_lines if missing or empty
-            needs_rebuild = (
-                not st.session_state.speaker_counts or
-                (not st.session_state.flagged_names and st.session_state.speaker_counts)
-            )
-            if needs_rebuild and st.session_state.get("quotes_lines"):
-                pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
-                counts_cap10 = {}
-                flagged = set()
-                for _line in st.session_state.quotes_lines:
-                    m = pattern_speaker.match(_line.strip())
-                    if not m:
-                        continue
-                    speaker_raw = m.group(1).strip()
-                    effective = smart_title(speaker_raw)
-                    norm = normalize_speaker_name(effective)
-                    if norm in flagged:
-                        continue
-                    c = counts_cap10.get(norm, 0)
-                    if c < 10:
-                        c += 1
-                        counts_cap10[norm] = c
-                        if c >= 10:
-                            flagged.add(norm)
-                st.session_state.speaker_counts = counts_cap10
-                st.session_state.flagged_names = flagged
+            # Ensure frequent-speaker data is available when loading
+            ensure_speaker_counts_and_flags()
+
 
         if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
@@ -806,7 +820,9 @@ if st.session_state.step == 1:
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
-                    st.rerun()
+                    
+                    ensure_speaker_counts_and_flags()
+st.rerun()
             else:
                 dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
                 st.session_state.quotes_lines = [line + "\n" for line in dialogue_list]
@@ -823,7 +839,9 @@ if st.session_state.step == 1:
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
-                    st.rerun()
+                    
+                    ensure_speaker_counts_and_flags()
+st.rerun()
         else:
             pass
     else:
@@ -860,12 +878,16 @@ if st.session_state.step == 1:
                 else:
                     st.session_state.step = 2
                 auto_save()
-                st.rerun()
+                
+                    ensure_speaker_counts_and_flags()
+st.rerun()
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
     st.markdown("<h4>Step 2: Process Unknown Speakers</h4>", unsafe_allow_html=True)
     st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip', 'exit', or 'undo').")
+    # Ensure frequent-speaker data is available on first entry to Step 2
+    ensure_speaker_counts_and_flags()
     
     def get_next_unknown_line():
         quotes = st.session_state.get("quotes_lines")
@@ -1152,7 +1174,6 @@ elif st.session_state.step == 4:
       -webkit-box-decoration-break: clone;
     }}
   </style>
-"""
 </head>
 <body>
 {final_html_body}
@@ -1192,7 +1213,9 @@ elif st.session_state.step == 4:
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
         st.session_state.step = 2
         auto_save()
-        st.rerun() 
+        
+                    ensure_speaker_counts_and_flags()
+st.rerun() 
         # Add a Clear Cache button below "Return to Step 2"
     if st.button("Clear Cache for This User"):
         # Only delete files for this userkey
