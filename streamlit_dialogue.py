@@ -230,13 +230,6 @@ def auto_load():
                 st.session_state.flagged_names = set(st.session_state.flagged_names)
             if st.session_state.get("speaker_counts") is None:
                 st.session_state.speaker_counts = {}
-                # Update flagged_names after speaker_counts changes
-                counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
-                flagged = set()
-                for norm, c in counts_cap10.items():
-                    if c >= 10:
-                        flagged.add(norm)
-                st.session_state.flagged_names = flagged
             if st.session_state.get("flagged_names") is None:
                 st.session_state.flagged_names = set()
             if st.session_state.get("canonical_map") is None:
@@ -267,13 +260,6 @@ def auto_load():
                         if c >= 10:
                             flagged.add(norm)
                 st.session_state.speaker_counts = counts_cap10
-                # Update flagged_names after speaker_counts changes
-                counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
-                flagged = set()
-                for norm, c in counts_cap10.items():
-                    if c >= 10:
-                        flagged.add(norm)
-                st.session_state.flagged_names = flagged
                 st.session_state.flagged_names = flagged
 
         if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
@@ -819,6 +805,36 @@ if st.session_state.step == 1:
                     st.session_state.unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
+                    # Ensure frequent-speaker buttons are initialised from quotes before entering Step 2
+                    try:
+                        if st.session_state.get("quotes_lines"):
+                            pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
+                            counts_cap10 = {}
+                            flagged = set()
+                            for _line in st.session_state.quotes_lines:
+                                m = pattern_speaker.match(_line.strip())
+                                if not m:
+                                    continue
+                                speaker_raw = m.group(1).strip()
+                                effective = smart_title(speaker_raw)
+                                norm = normalize_speaker_name(effective)
+                                if norm in flagged:
+                                    continue
+                                c = counts_cap10.get(norm, 0)
+                                if c < 10:
+                                    c += 1
+                                    counts_cap10[norm] = c
+                                    if c >= 10:
+                                        flagged.add(norm)
+                            st.session_state.speaker_counts = counts_cap10
+                            st.session_state.flagged_names = flagged
+                        else:
+                            if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
+                                st.session_state.speaker_counts = {}
+                            if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
+                                st.session_state.flagged_names = set()
+                    except Exception:
+                        pass
                     auto_save()
                     st.rerun()
             else:
@@ -836,6 +852,36 @@ if st.session_state.step == 1:
                     st.session_state.unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
+                    # Ensure frequent-speaker buttons are initialised from quotes before entering Step 2
+                    try:
+                        if st.session_state.get("quotes_lines"):
+                            pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
+                            counts_cap10 = {}
+                            flagged = set()
+                            for _line in st.session_state.quotes_lines:
+                                m = pattern_speaker.match(_line.strip())
+                                if not m:
+                                    continue
+                                speaker_raw = m.group(1).strip()
+                                effective = smart_title(speaker_raw)
+                                norm = normalize_speaker_name(effective)
+                                if norm in flagged:
+                                    continue
+                                c = counts_cap10.get(norm, 0)
+                                if c < 10:
+                                    c += 1
+                                    counts_cap10[norm] = c
+                                    if c >= 10:
+                                        flagged.add(norm)
+                            st.session_state.speaker_counts = counts_cap10
+                            st.session_state.flagged_names = flagged
+                        else:
+                            if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
+                                st.session_state.speaker_counts = {}
+                            if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
+                                st.session_state.flagged_names = set()
+                    except Exception:
+                        pass
                     auto_save()
                     st.rerun()
         else:
@@ -873,6 +919,36 @@ if st.session_state.step == 1:
                     st.session_state.step = 1
                 else:
                     st.session_state.step = 2
+                    # Ensure frequent-speaker buttons are initialised from quotes before entering Step 2
+                    try:
+                        if st.session_state.get("quotes_lines"):
+                            pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
+                            counts_cap10 = {}
+                            flagged = set()
+                            for _line in st.session_state.quotes_lines:
+                                m = pattern_speaker.match(_line.strip())
+                                if not m:
+                                    continue
+                                speaker_raw = m.group(1).strip()
+                                effective = smart_title(speaker_raw)
+                                norm = normalize_speaker_name(effective)
+                                if norm in flagged:
+                                    continue
+                                c = counts_cap10.get(norm, 0)
+                                if c < 10:
+                                    c += 1
+                                    counts_cap10[norm] = c
+                                    if c >= 10:
+                                        flagged.add(norm)
+                            st.session_state.speaker_counts = counts_cap10
+                            st.session_state.flagged_names = flagged
+                        else:
+                            if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
+                                st.session_state.speaker_counts = {}
+                            if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
+                                st.session_state.flagged_names = set()
+                    except Exception:
+                        pass
                 auto_save()
                 st.rerun()
 
@@ -967,35 +1043,14 @@ elif st.session_state.step == 2:
                     norm = normalize_speaker_name(updated_speaker)
                     if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
                         st.session_state.speaker_counts = {}
-                        # Update flagged_names after speaker_counts changes
-                        counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
-                        flagged = set()
-                        for norm, c in counts_cap10.items():
-                            if c >= 10:
-                                flagged.add(norm)
-                        st.session_state.flagged_names = flagged
                     if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
                         st.session_state.flagged_names = set()
                     if norm not in st.session_state.flagged_names:
                         new_cnt = st.session_state.speaker_counts.get(norm, 0) + 1
-                        # Update flagged_names after speaker_counts changes
-                        counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
-                        flagged = set()
-                        for norm, c in counts_cap10.items():
-                            if c >= 10:
-                                flagged.add(norm)
-                        st.session_state.flagged_names = flagged
                         if new_cnt >= 10:
                             new_cnt = 10
                             st.session_state.flagged_names.add(norm)
                         st.session_state.speaker_counts[norm] = new_cnt
-                        # Update flagged_names after speaker_counts changes
-                        counts_cap10 = {norm: c for norm, c in st.session_state.speaker_counts.items() if c >= 10}
-                        flagged = set()
-                        for norm, c in counts_cap10.items():
-                            if c >= 10:
-                                flagged.add(norm)
-                        st.session_state.flagged_names = flagged
                 except Exception as _e:
                     pass
                 new_line = prefix + updated_speaker + remainder
@@ -1225,6 +1280,36 @@ elif st.session_state.step == 4:
             st.session_state.speaker_colors = colors
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
         st.session_state.step = 2
+        # Ensure frequent-speaker buttons are initialised from quotes before entering Step 2
+        try:
+            if st.session_state.get("quotes_lines"):
+                pattern_speaker = re.compile(r"^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):")
+                counts_cap10 = {}
+                flagged = set()
+                for _line in st.session_state.quotes_lines:
+                    m = pattern_speaker.match(_line.strip())
+                    if not m:
+                        continue
+                    speaker_raw = m.group(1).strip()
+                    effective = smart_title(speaker_raw)
+                    norm = normalize_speaker_name(effective)
+                    if norm in flagged:
+                        continue
+                    c = counts_cap10.get(norm, 0)
+                    if c < 10:
+                        c += 1
+                        counts_cap10[norm] = c
+                        if c >= 10:
+                            flagged.add(norm)
+                st.session_state.speaker_counts = counts_cap10
+                st.session_state.flagged_names = flagged
+            else:
+                if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
+                    st.session_state.speaker_counts = {}
+                if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
+                    st.session_state.flagged_names = set()
+        except Exception:
+            pass
         auto_save()
         st.rerun() 
         # Add a Clear Cache button below "Return to Step 2"
