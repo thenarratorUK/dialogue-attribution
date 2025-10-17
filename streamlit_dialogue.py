@@ -175,7 +175,7 @@ def smart_title(name):
     words = name.split()
     if not words:
         return name
-                    exceptions = {"ps", "pc", "ds", "di", "dci"}
+    exceptions = {"ps", "pc", "ds", "di", "dci"}
     new_words = []
     for w in words:
         if w.lower() in exceptions:
@@ -839,25 +839,25 @@ if st.session_state.step == 1:
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
                     
-                    # Determine first unresolved 'Unknown' line
+                                        # Determine first unresolved 'Unknown' line
                     try:
-                        _pat_header = re.compile(r'^\s*\d+(?:[a-zA-Z]+)?\.\s+([^:]+):(.*)$')
+                        _pat_header = re.compile(r'^\s*\d+(?:[A-Za-z]+)?\.\s+([^:]+):(.*)$')
                         _ql = st.session_state.get("quotes_lines") or []
                         _first_unknown = None
                         for _j, _q in enumerate(_ql):
-                        _m = _pat_header.match(_q)
-                        if not _m:
-                        continue
-                        if _m.group(1).strip().lower() == "unknown":
-                        _first_unknown = _j
-                        break
+                            _m = _pat_header.match(_q)
+                            if not _m:
+                                continue
+                            if _m.group(1).strip().lower() == "unknown":
+                                _first_unknown = _j
+                                break
                         st.session_state.unknown_index = int(_first_unknown) if _first_unknown is not None else 0
                     except Exception:
-    st.session_state.unknown_index = 0
-st.session_state.context_search_idx = 0
-st.session_state.preview_hit_idx_map = {}
-st.session_state.last_rendered_unknown_index = 0
-# === Occurrence-rank initial context resolution (Strategy A) ===
+                        st.session_state.unknown_index = 0
+                    st.session_state.context_search_idx = 0
+                    st.session_state.preview_hit_idx_map = {}
+                    st.session_state.last_rendered_unknown_index = 0
+                    # === Occurrence-rank initial context resolution (Strategy A) ===
                     try:
                         quotes = st.session_state.get("quotes_lines") or []
                         idx = int(st.session_state.get("unknown_index", 0))
