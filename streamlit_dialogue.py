@@ -201,6 +201,7 @@ def auto_save():
         "quotes_lines": st.session_state.get("quotes_lines"),
         "speaker_colors": st.session_state.get("speaker_colors"),
         "unknown_index": st.session_state.get("unknown_index", 0),
+        "context_search_idx": st.session_state.get("context_search_idx", 0),
         "console_log": st.session_state.get("console_log", []),
         "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
@@ -375,11 +376,8 @@ def effective_run_italic(run, paragraph):
 
 
 def extract_italicized_text(paragraph):
-    """
-    Return a list of italic blocks for a paragraph.
-    Detects italics after cascading: paragraph style -> character style -> direct run formatting.
-    Preserves the existing >= 2-word threshold and smart_join behaviour.
-    """
+    """Return a list of italic blocks for a paragraph.
+    Applies cascade-aware italics detection and preserves the ≥2-word threshold."""
     italic_blocks = []
     current_block = []
     for run in paragraph.runs:
@@ -803,6 +801,7 @@ if st.session_state.step == 1:
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
+                    st.session_state.context_search_idx = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
@@ -820,6 +819,7 @@ if st.session_state.step == 1:
                 if st.button("Continue", key="continue_docx"):
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
+                    st.session_state.context_search_idx = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
                     auto_save()
@@ -854,6 +854,7 @@ if st.session_state.step == 1:
                 else:
                     st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
+                st.session_state.context_search_idx = 0
                 st.session_state.console_log = []
                 if st.session_state.docx_only:
                     st.session_state.step = 1
@@ -864,6 +865,9 @@ if st.session_state.step == 1:
 
 # ========= STEP 2: Unknown Speaker Processing =========
 elif st.session_state.step == 2:
+    # Initialise the moving search marker for preview context (kept across sessions if auto-loaded)
+    if "context_search_idx" not in st.session_state:
+            st.session_state.context_search_idx = 0
     st.markdown("<h4>Step 2: Process Unknown Speakers</h4>", unsafe_allow_html=True)
     st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip', 'exit', or 'undo').")
     
@@ -891,331 +895,73 @@ elif st.session_state.step == 2:
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
-        def get_context_for_dialogue(dialogue):
+
+        def get_context_for_dialogue(dialogue: str):
+
+            """
+
+            Returns context (previous/current/next) for the *next* occurrence of `dialogue`
+
+            in the DOCX, starting the search at st.session_state.context_search_idx.
+
+            This only affects the bold preview; it does NOT change your separate highlighting.
+
+            """
+
             try:
+
                 doc = docx.Document(st.session_state.docx_path)
+
             except Exception:
+
                 return None
-            normalized_dialogue = normalize_text(dialogue).lower()
-            for idx, para in enumerate(doc.paragraphs):
-                para_text = normalize_text(para.text)
-                if normalized_dialogue in para_text.lower():
+
+
+            target = normalize_text(dialogue).lower().strip()
+
+            start_idx = int(st.session_state.get("context_search_idx", 0))
+
+
+            # Scan FORWARD starting at the moving marker
+
+            for idx in range(start_idx, len(doc.paragraphs)):
+
+                para_text_raw = doc.paragraphs[idx].text
+
+                para_text_norm = normalize_text(para_text_raw).lower()
+
+
+                if target and target in para_text_norm:
+
                     context = {}
+
                     if idx > 0:
-                        context['previous'] = doc.paragraphs[idx-1].text
+
+                        context["previous"] = doc.paragraphs[idx - 1].text
+
+
+                    # Keep your current bold-preview style: first visible match only
+
                     pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                    highlighted = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para.text)
-                    context['current'] = highlighted
-                    if idx+1 < len(doc.paragraphs):
-                        context['next'] = doc.paragraphs[idx+1].text
+
+                    highlighted = pattern.sub(lambda m: "<b>" + m.group(0) + "</b>", para_text_raw, count=1)
+
+                    context["current"] = highlighted
+
+
+                    if idx + 1 < len(doc.paragraphs):
+
+                        context["next"] = doc.paragraphs[idx + 1].text
+
+
+                    # Advance the marker so next call starts *after* this paragraph
+
+                    st.session_state.context_search_idx = idx + 1
+
+
                     return context
+
+
+            # If inputs are strictly in order, we shouldn't fall through.
+
             return None
-
-        context = get_context_for_dialogue(dialogue)
-        if context:
-            if "previous" in context:
-                st.write(context["previous"])
-            st.markdown(context["current"], unsafe_allow_html=True)
-            if "next" in context:
-                st.write(context["next"])
-        else:
-            st.write("No context found in DOCX for this quote.")
-        st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
-        st.write(f"**Dialogue (Line {index+1}):** {dialogue}")
-        
-        def process_unknown_input(new_speaker: str):
-            new_speaker = new_speaker.strip()
-            if new_speaker.lower() == "exit":
-                st.session_state.console_log.insert(0, "Exiting unknown speaker processing.")
-                st.session_state.step = 3
-            elif new_speaker.lower() == "skip":
-                st.session_state.console_log.insert(0, f"Skipped line {index+1}.")
-                st.session_state.unknown_index = index + 1
-            elif new_speaker.lower() == "undo":
-                if "last_update" in st.session_state:
-                    last_index = st.session_state.last_update[0]
-                    pattern = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]+)(:.*)$")
-                    m = pattern.match(st.session_state.quotes_lines[last_index])
-                    if m:
-                        prefix_u, _, remainder_u = m.groups()
-                        st.session_state.quotes_lines[last_index] = prefix_u + "Unknown" + remainder_u
-                        st.session_state.unknown_index = last_index
-                        st.session_state.console_log.insert(0, f"Reverted line {last_index+1} to Unknown.")
-                    del st.session_state.last_update
-                else:
-                    st.session_state.console_log.insert(0, "Nothing to undo.")
-            else:
-                st.session_state.last_update = (index, st.session_state.quotes_lines[index])
-                updated_speaker = smart_title(new_speaker)
-
-                # Increment count for unflagged speakers and flag at 10
-                try:
-                    norm = normalize_speaker_name(updated_speaker)
-                    if "speaker_counts" not in st.session_state or st.session_state.speaker_counts is None:
-                        st.session_state.speaker_counts = {}
-                    if "flagged_names" not in st.session_state or st.session_state.flagged_names is None:
-                        st.session_state.flagged_names = set()
-                    if norm not in st.session_state.flagged_names:
-                        new_cnt = st.session_state.speaker_counts.get(norm, 0) + 1
-                        if new_cnt >= 10:
-                            new_cnt = 10
-                            st.session_state.flagged_names.add(norm)
-                        st.session_state.speaker_counts[norm] = new_cnt
-                except Exception as _e:
-                    pass
-                new_line = prefix + updated_speaker + remainder
-                if not new_line.endswith("\n"):
-                    new_line += "\n"
-                st.session_state.quotes_lines[index] = new_line
-                st.session_state.console_log.insert(0, f"Updated line {index+1} with speaker: {updated_speaker}")
-                st.session_state.unknown_index = index + 1
-            auto_save()
-            st.rerun()
-        
-        # --- New: one‑submit‑per‑name form -------------------------------
-
-        # Frequent speakers (flagged, alphabetical). Buttons act like typing + Enter.
-        try:
-            if "flagged_names" in st.session_state and st.session_state.flagged_names:
-                flagged_sorted = sorted(st.session_state.flagged_names)
-                flagged_sorted = [n for n in flagged_sorted if n.lower() != "unknown"]
-                st.caption("Frequent speakers:")
-                cols = st.columns(4)
-                cmap = st.session_state.get("canonical_map") or {}
-                for i, norm in enumerate(flagged_sorted):
-                    display_name = cmap.get(norm, norm.title())
-                    if cols[i % 4].button(display_name, key=f"flagged_{norm}"):
-                        process_unknown_input(display_name)
-        except Exception as _e:
-            pass
-        with st.form("unknown_form", clear_on_submit=True):
-            new_name = st.text_input(
-                "Enter speaker name (or 'skip'/'exit'/'undo'):",
-                key="new_speaker_input",
-                placeholder="Type name and press Enter",
-            )
-            submitted = st.form_submit_button("Submit")  # Enter inside box triggers this
-
-# Runs only once per finished answer (zero reruns while typing)
-        if submitted:
-            process_unknown_input(new_name)
-          
-        st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
-
-# ========= STEP 3: Speaker Color Assignment =========
-elif st.session_state.step == 3:
-    st.markdown("<h4>Step 3: Speaker Color Assignment</h4>", unsafe_allow_html=True)
-    st.write("Assign highlight colors for speakers that do not yet have an assigned color. You can also click 'Edit Speaker Colors' to review and change all assignments.")
-    # Load the canonical speakers.
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
-        tmp_quotes.write("".join(st.session_state.quotes_lines))
-        tmp_quotes_path = tmp_quotes.name
-    canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
-    st.session_state.canonical_map = canonical_map
-    # Load existing colors (or default to empty dict)
-    existing_colors = st.session_state.get("existing_speaker_colors") or load_existing_colors() or {}
-    
-    # Determine which speakers need a new assignment
-    speakers_to_assign = [
-        sp for sp in canonical_speakers 
-        if sp.lower() != "unknown" and (normalize_speaker_name(sp) not in existing_colors or existing_colors.get(normalize_speaker_name(sp), "none") == "none")
-    ]
-    
-    if speakers_to_assign:
-        st.write("Assign colors to the following speakers:")
-        color_options = [color.title() for color in COLOR_PALETTE.keys()]
-        updated_colors = {}
-        for sp in speakers_to_assign:
-            norm = normalize_speaker_name(sp)
-            default_color = existing_colors.get(norm, "none")
-            try:
-                default_index = color_options.index(default_color.title())
-            except ValueError:
-                default_index 	= color_options.index("None")
-            selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+norm)
-            updated_colors[norm] = selected.lower()
-        # Merge updated colors with any already assigned values.
-        for norm, col in updated_colors.items():
-            existing_colors[norm] = col
-        # Build final dictionary using normalized keys.
-        final_colors = {}
-        for sp in canonical_speakers:
-            norm = normalize_speaker_name(sp)
-            if sp.lower() == "unknown":
-                final_colors[norm] = "none"
-            else:
-                final_colors[norm] = existing_colors.get(norm, "none")
-        st.session_state.speaker_colors = final_colors
-        st.session_state.existing_speaker_colors = existing_colors.copy()
-        save_speaker_colors(final_colors)
-        st.success("Speaker colors updated.")
-    else:
-        st.write("All speakers already have assigned colors.")
-    if os.path.exists(get_saved_colors_file()):
-        with open(get_saved_colors_file(), "r", encoding="utf-8") as f:
-            loaded_colors = json.load(f)
-        st.session_state.speaker_colors = loaded_colors
-        st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
-    else:
-        st.session_state.speaker_colors = {}
-        st.session_state.existing_speaker_colors = {}
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Continue"):
-            st.session_state.step = 4
-            auto_save()
-            st.rerun()
-    with col2:
-        if st.button("Edit Speaker Colors"):
-            if os.path.exists(get_saved_colors_file()):
-                with open(get_saved_colors_file(), "r", encoding="utf-8") as f:
-                    loaded_colors = json.load(f)
-                st.session_state.speaker_colors = loaded_colors
-                st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in loaded_colors.items()}
-            st.session_state.step = "edit_colors"
-            auto_save()
-            st.rerun()
-
-# ========= EDIT COLORS: Full Speaker Color Assignment =========
-elif st.session_state.step == "edit_colors":
-    st.markdown("<h4>Edit Speaker Colors</h4>", unsafe_allow_html=True)
-    st.write("Edit the assigned colors for all speakers (excluding 'Unknown'):")
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
-        tmp_quotes.write("".join(st.session_state.quotes_lines))
-        tmp_quotes_path = tmp_quotes.name
-    canonical_speakers, canonical_map = get_canonical_speakers(tmp_quotes_path)
-    st.session_state.canonical_map = canonical_map
-    # Load current colors (or default to empty)
-    existing_colors = st.session_state.get("speaker_colors") or load_existing_colors() or {}
-    updated_colors = existing_colors.copy()
-    color_options = [color.title() for color in COLOR_PALETTE.keys()]
-    for sp in canonical_speakers:
-        if sp.lower() == "unknown":
-            continue
-        norm = normalize_speaker_name(sp)
-        default_color = existing_colors.get(norm, "none")
-        try:
-            default_index = color_options.index(default_color.title())
-        except ValueError:
-            default_index = color_options.index("None")
-        selected = st.selectbox(sp, options=color_options, index=default_index, key="edit_"+norm)
-        updated_colors[norm] = selected.lower()
-    st.session_state.speaker_colors = updated_colors
-    st.session_state.existing_speaker_colors = updated_colors.copy()
-    save_speaker_colors(updated_colors)
-    st.success("Speaker colors updated.")
-    if st.button("Continue"):
-        st.session_state.step = 4
-        auto_save()
-        st.rerun()
-
-# ========= STEP 4: Final HTML Generation =========
-elif st.session_state.step == 4:
-    if "speaker_colors" not in st.session_state or st.session_state.speaker_colors is None:
-        st.session_state.speaker_colors = load_existing_colors() or {}
-    st.markdown("<h4>Step 4: Final HTML Generation</h4>", unsafe_allow_html=True)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
-        tmp_quotes.write("".join(st.session_state.quotes_lines))
-        quotes_file_path = tmp_quotes.name
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_marker:
-        marker_docx_path = tmp_marker.name
-    create_marker_docx(st.session_state.docx_path, marker_docx_path)
-    html = convert_docx_to_html_mammoth(marker_docx_path)
-    os.remove(marker_docx_path)
-    quotes_list = load_quotes(quotes_file_path, st.session_state.canonical_map)
-    highlighted_html = highlight_dialogue_in_html(html, quotes_list, st.session_state.speaker_colors)
-    final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
-    summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
-    ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
-    first_lines_html = generate_first_lines_html(quotes_list, list(st.session_state.canonical_map.values()))
-    final_html_body = summary_html + "\n<br><br><br>\n" + ranking_html + "\n<br><br><br>\n" + first_lines_html + "\n" + final_html_body
-    final_html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{st.session_state.book_name}</title>
-  <style>
-    body {{
-      font-family: Avenir, sans-serif;
-      line-height: 2;
-      max-width: 500px;
-      margin: auto;
-    }}
-    span {{
-      padding: 0;
-    }}
-    span.highlight {{
-      background-color: var(--highlight-color, transparent);
-      padding: 0.33em 0px;
-      box-decoration-break: clone;
-      -webkit-box-decoration-break: clone;
-    }}
-  </style>
-</head>
-<body>
-{final_html_body}
-</body>
-</html>
-"""
-    final_html_path = os.path.join(tempfile.gettempdir(), f"{st.session_state.book_name}.html")
-    with open(final_html_path, "w", encoding="utf-8") as f:
-        f.write(final_html)
-    st.success("Final HTML generated.")
-    components.html(final_html, height=800, scrolling=True)
-    with open(final_html_path, "rb") as f:
-        html_bytes = f.read()
-    st.download_button("Download HTML File", html_bytes,
-                       file_name=f"{st.session_state.userkey}-{st.session_state.book_name}.html", mime="text/html")
-    updated_colors = json.dumps(st.session_state.speaker_colors, indent=4, ensure_ascii=False).encode("utf-8")
-    st.download_button("Download Updated Speaker Colors JSON", updated_colors,
-                       file_name=f"{st.session_state.userkey}-speaker_colors.json", mime="application/json")
-    updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
-    st.download_button("Download Updated Quotes TXT", updated_quotes,
-                       file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
-    if os.path.exists(get_unmatched_quotes_filename()):
-        with open(get_unmatched_quotes_filename(), "rb") as f:
-            unmatched_bytes = f.read()
-        st.download_button("Download Unmatched Quotes TXT", unmatched_bytes,
-                           file_name=get_unmatched_quotes_filename(), mime="text/plain")
-    if st.button("Return to Step 2"):
-        if "book_name" in st.session_state:
-            quotes_filename = f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt"
-            if os.path.exists(quotes_filename):
-                with open(quotes_filename, "r", encoding="utf-8") as f:
-                    st.session_state.quotes_lines = f.read().splitlines(keepends=True)
-        if os.path.exists(f"{st.session_state.userkey}-speaker_colors.json"):
-            with open(f"{st.session_state.userkey}-speaker_colors.json", "r", encoding="utf-8") as f:
-                colors = json.load(f)
-            st.session_state.speaker_colors = colors
-            st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
-        st.session_state.step = 2
-        auto_save()
-        st.rerun() 
-        # Add a Clear Cache button below "Return to Step 2"
-    if st.button("Clear Cache for This User"):
-        # Only delete files for this userkey
-        files_to_remove = [
-            get_progress_file(),
-            get_saved_colors_file(),
-            get_unmatched_quotes_filename(),
-            f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt",
-            f"{st.session_state.userkey}-{st.session_state.book_name}.html"
-        ]
-        for path in files_to_remove:
-            try:
-                if os.path.exists(path):
-                    os.remove(path)
-            except Exception as e:
-                st.warning(f"Could not remove {path}: {e}")
-
-        # List all your app’s keys here to reset ONLY relevant state
-        keys_to_clear = [
-            "step", "userkey", "docx_bytes", "docx_path", "book_name",
-            "quotes_lines", "speaker_colors", "existing_speaker_colors",
-            "unknown_index", "console_log", "canonical_map", "last_update"
-        ]
-        for k in keys_to_clear:
-            if k in st.session_state:
-                del st.session_state[k]
-        st.rerun()
