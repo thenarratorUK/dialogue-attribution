@@ -157,6 +157,62 @@ def get_unmatched_quotes_filename():
     return f"{st.session_state.userkey}-unmatched_quotes.txt"
 
 def normalize_text(text):
+
+def regen_ctx_marker_for_current_unknown():
+    """
+    Set context_search_idx to just after the Nth occurrence of the current unknown dialogue.
+    Called when entering Step 2 (including Load Saved Progress). Minimal and top-level.
+    """
+    try:
+        doc = docx.Document(st.session_state.docx_path)
+    except Exception:
+        return
+
+    quotes = st.session_state.get("quotes_lines") or []
+    ui = int(st.session_state.get("unknown_index", 0))
+    if not (0 <= ui < len(quotes)):
+        return
+
+    # Extract current dialogue text
+    cur = quotes[ui]
+    if isinstance(cur, dict):
+        line = cur.get("line") or cur.get("dialogue") or ""
+    else:
+        line = str(cur) if cur is not None else ""
+    target = normalize_text(line).lower().strip()
+    if not target:
+        return
+
+    # Count prior identicals
+    prior = 0
+    for k in range(ui):
+        prev = quotes[k]
+        if isinstance(prev, dict):
+            txt = prev.get("line") or prev.get("dialogue") or ""
+        else:
+            txt = str(prev) if prev is not None else ""
+        if normalize_text(txt).lower().strip() == target:
+            prior += 1
+    nth = prior + 1
+
+    # Find nth occurrence in DOCX
+    count = 0
+    found_idx = None
+    for idx, p in enumerate(doc.paragraphs):
+        if target in normalize_text(p.text).lower():
+            count += 1
+            if count == nth:
+                found_idx = idx
+                break
+
+    if found_idx is not None:
+        st.session_state.context_search_idx = found_idx + 1
+        # Optional: clear any preview cache if present
+        if "preview_hit_idx_map" in st.session_state:
+            st.session_state.preview_hit_idx_map = {}
+        if "last_rendered_unknown_index" in st.session_state:
+            st.session_state.last_rendered_unknown_index = ui
+
     text = text.replace("\u00A0", " ")
     text = text.replace("…", "...")
     text = text.replace("“", "\"").replace("”", "\"")
@@ -805,8 +861,6 @@ if st.session_state.step == 1:
                     st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
-                    regen_ctx_marker_for_current_unknown()
-
                     auto_save()
                     st.rerun()
             else:
@@ -827,8 +881,6 @@ if st.session_state.step == 1:
                     st.session_state.last_rendered_unknown_index = 0
                     st.session_state.console_log = []
                     st.session_state.step = 2
-                    regen_ctx_marker_for_current_unknown()
-
                     auto_save()
                     st.rerun()
         else:
@@ -869,8 +921,6 @@ if st.session_state.step == 1:
                     st.session_state.step = 1
                 else:
                     st.session_state.step = 2
-                    regen_ctx_marker_for_current_unknown()
-
                 auto_save()
                 st.rerun()
 
@@ -1244,8 +1294,6 @@ elif st.session_state.step == 4:
             st.session_state.speaker_colors = colors
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in colors.items()}
         st.session_state.step = 2
-        regen_ctx_marker_for_current_unknown()
-
         auto_save()
         st.rerun() 
         # Add a Clear Cache button below "Return to Step 2"
