@@ -973,60 +973,33 @@ elif st.session_state.step == 2:
             st.rerun()
         
         # --- New: one‑submit‑per‑name form -------------------------------
-        # Rebuild flags if empty at render time
-        if (not st.session_state.get("_flag_build_done")) and (not st.session_state.get("flagged_names")) and st.session_state.get("quotes_lines"):
-            pattern_speaker = re.compile(r"^\s*\d+(?:[A-Za-z]+)?\.\s+([^:]+):")
-            counts_cap10, flagged = {}, set()
-            for _line in st.session_state.quotes_lines:
-                m = pattern_speaker.match(_line.strip())
-                if not m:
-                    continue
-                sp = smart_title(m.group(1).strip())
-                norm = normalize_speaker_name(sp)
-                if norm in flagged:
-                    continue
-                c = counts_cap10.get(norm, 0)
-                if c < 10:
-                    c += 1
-                    counts_cap10[norm] = c
-                    if c >= 10:
-                        flagged.add(norm)
-            flagged.discard(normalize_speaker_name("Unknown"))
-            st.session_state.speaker_counts = counts_cap10
-            st.session_state.flagged_names = flagged
-            st.session_state._flag_build_done = True
 
         # Frequent speakers (flagged, alphabetical). Buttons act like typing + Enter.
-        flagged = st.session_state.get("flagged_names") or set()
-        if flagged:
-            flagged_sorted = [n for n in sorted(flagged) if n.lower() != "unknown"]
-            if flagged_sorted:
-                st.caption("Frequent speakSubmit")  # Enter inside box triggers this
+        try:
+            if "flagged_names" in st.session_state and st.session_state.flagged_names:
+                flagged_sorted = sorted(st.session_state.flagged_names)
+                flagged_sorted = [n for n in flagged_sorted if n.lower() != "unknown"]
+                st.caption("Frequent speakers:")
+                cols = st.columns(4)
+                cmap = st.session_state.get("canonical_map") or {}
+                for i, norm in enumerate(flagged_sorted):
+                    display_name = cmap.get(norm, norm.title())
+                    if cols[i % 4].button(display_name, key=f"flagged_{norm}"):
+                        process_unknown_input(display_name)
+        except Exception as _e:
+            pass
+        with st.form("unknown_form", clear_on_submit=True):
+            new_name = st.text_input(
+                "Enter speaker name (or 'skip'/'exit'/'undo'):",
+                key="new_speaker_input",
+                placeholder="Type name and press Enter",
+            )
+            submitted = st.form_submit_button("Submit")  # Enter inside box triggers this
 
 # Runs only once per finished answer (zero reruns while typing)
         if submitted:
             process_unknown_input(new_name)
 
-        # Rebuild flags if empty at render time
-        if (not st.session_state.get("flagged_names")) and st.session_state.get("quotes_lines"):
-            pattern_speaker = re.compile(r"^\s*\d+(?:[A-Za-z]+)?\.\s+([^:]+):")
-            counts_cap10, flagged = {}, set()
-            for _line in st.session_state.quotes_lines:
-                m = pattern_speaker.match(_line.strip())
-                if not m:
-                    continue
-                sp = smart_title(m.group(1).strip())
-                norm = normalize_speaker_name(sp)
-                if norm in flagged:
-                    continue
-                c = counts_cap10.get(norm, 0)
-                if c < 10:
-                    c += 1
-                    counts_cap10[norm] = c
-                    if c >= 10:
-                        flagged.add(norm)
-            st.session_state.speaker_counts = counts_cap10
-            st.session_state.flagged_names = flagged
         # Frequent speakers (flagged, alphabetical). Buttons act like typing + Enter.
         try:
             if "flagged_names" in st.session_state and st.session_state.flagged_names:
