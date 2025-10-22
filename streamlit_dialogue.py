@@ -89,11 +89,21 @@ def build_d_paragraphs_html(docx_path):
         if b: s = f"<b>{s}</b>"
         return s
     out = []
+    # ensure `re` is imported at top of file: import re
     for p in doc.paragraphs:
         if not p.runs:
-            out.append(html.escape(p.text or ""))
+            candidate = html.escape(p.text or "")
         else:
-            out.append("".join(wrap(r.text, r.bold, r.italic, r.underline) for r in p.runs))
+            candidate = "".join(
+                wrap(r.text, r.bold, r.italic, r.underline) for r in p.runs
+            )
+    
+        # Drop empty/whitespace-only paragraphs (ignoring any HTML tags)
+        plain = re.sub(r"<[^>]*>", "", candidate)  # strip tags for the emptiness check
+        if not re.search(r"\S", plain):            # no non-whitespace char
+            continue
+    
+        out.append(candidate)
     return out
 
 
