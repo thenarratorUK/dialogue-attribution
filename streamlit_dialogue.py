@@ -165,6 +165,78 @@ def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1
 
     try:
         soup = BeautifulSoup(paragraphs_html[chosen_idx], "html.parser")
+                # --- begin: tag-stripped match + bold in original HTML (early-return if applied) ---
+        # 1) Build a tag-stripped view for matching (keeps text as user sees it)
+        plain_text = soup.get_text()
+        
+        # 2) Find the m-th (within_para_target) occurrence on the stripped view
+        _pat = re.compile(re.escape(dialogue_to_highlight), re.IGNORECASE)
+        _occ = 0
+        _span = None
+        for _m in _pat.finditer(plain_text):
+            _occ += 1
+            if _occ == within_para_target:
+                _span = (_m.start(), _m.end())
+                break
+        
+        # 3) If found, map the [start:end) range back onto the original soup's text nodes and wrap with <b>
+        if _span is not None:
+            _start, _end = _span
+            running = 0
+            # Walk text nodes in order; split and wrap overlap segments with <b>
+            for tnode in list(soup.find_all(string=True)):
+                p = getattr(tnode.parent, "name", "").lower()
+                if p in ("script", "style"):
+                    continue
+                text = str(tnode)
+                length = len(text)
+                node_start = running
+                node_end = running + length
+        
+                # Does this node overlap the target [start, end)?
+                if node_end > _start and node_start < _end:
+                    # overlap in this node
+                    ov_start = max(_start, node_start)
+                    ov_end   = min(_end, node_end)
+                    rel_start = ov_start - node_start
+                    rel_end   = ov_end   - node_start
+        
+                    before = text[:rel_start]
+                    match  = text[rel_start:rel_end]
+                    after  = text[rel_end:]
+        
+                    from bs4 import NavigableString
+                    new_nodes = []
+                    if before:
+                        new_nodes.append(NavigableString(before))
+                    btag = soup.new_tag("b")
+                    btag.string = match
+                    new_nodes.append(btag)
+                    if after:
+                        new_nodes.append(NavigableString(after))
+        
+                    # Replace this text node with the split nodes
+                    tnode.replace_with(*new_nodes)
+        
+                    # IMPORTANT: if match spans multiple consecutive text nodes,
+                    # decrease the remaining range and continue across nodes
+                    # Update the remaining global range for subsequent nodes:
+                    # we wrapped [ov_start, ov_end), so advance _start to ov_end
+                    _start = ov_end
+                    if _start >= _end:
+                        break  # fully wrapped
+        
+                    # Adjust running to reflect we've consumed this node
+                    running = node_end
+                    continue
+        
+                running += length
+        
+            ctx["current"] = str(soup)
+            if chosen_idx + 1 < len(paragraphs_html):
+                ctx["next"] = paragraphs_html[chosen_idx + 1]
+            return ctx
+        # --- end: tag-stripped match + bold in original HTML ---
         pattern = re.compile(re.escape(dialogue_to_highlight), re.IGNORECASE)
 
         global_counter = 0
