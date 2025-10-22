@@ -10,9 +10,258 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
+import html
+
+def trim_paragraph_cache_before_previous(previous_html: str):
+    try:
+        djson_path = st.session_state.get('d_json_path')
+        if not djson_path or not os.path.exists(djson_path):
+            return False
+        with open(djson_path, "r", encoding="utf-8") as f:
+            paragraphs_html = json.load(f)
+        if not previous_html:
+            return False
+
+        # Exact match first
+        try:
+            idx = paragraphs_html.index(previous_html)
+        except ValueError:
+            # Fallback: compare by text (strip tags) to be resilient
+            def strip_html(s):
+                try:
+                    soup = BeautifulSoup(s, "html.parser")
+                    return soup.get_text() or ""
+                except Exception:
+                    return s
+            prev_text = strip_html(previous_html)
+            idx = -1
+            for i, p in enumerate(paragraphs_html):
+                if strip_html(p) == prev_text:
+                    idx = i
+                    break
+
+        if idx <= 0:
+            # Either not found (-1) or already first item (0); nothing to remove before it.
+            return False
+
+        # Keep from 'previous_html' onward (i.e., drop 0..idx-1 inclusive)
+        new_paragraphs = paragraphs_html[idx:]
+        with open(djson_path, "w", encoding="utf-8") as f:
+            json.dump(new_paragraphs, f, ensure_ascii=False)
+        # Update session so subsequent reads are consistent
+        st.session_state.trimmed_paragraphs_since_last = True
+        return True
+    except Exception:
+        return False
+
+def neutralize_markdown_in_html(html_s: str) -> str:
+    try:
+        soup = BeautifulSoup(html_s, "html.parser")
+        for t in list(soup.find_all(string=True)):
+            # Skip script/style tags
+            if getattr(t.parent, "name", "").lower() in ("script", "style"):
+                continue
+            # Replace literal '*' and '_' with HTML entities so st.markdown doesn't italicise them.
+            new_txt = t.replace("*", r"\*").replace("_", r"\_")
+            if new_txt != t:
+                t.replace_with(new_txt)
+        return str(soup)
+    except Exception:
+        # Fallback: raw replacements (may affect tags if present, but better than italics)
+        return html_s.replace("*", "&#42;").replace("_", "&#95;")
 
 # Import components for HTML embedding.
 import streamlit.components.v1 as components
+
+def build_d_paragraphs_html(docx_path):
+    import docx
+    import html
+    try:
+        doc = docx.Document(docx_path)
+    except Exception:
+        return []
+    def wrap(txt, b, i, u):
+        s = html.escape(txt or "")
+        if not s:
+            return s
+        if u: s = f"<u>{s}</u>"
+        if i: s = f"<i>{s}</i>"
+        if b: s = f"<b>{s}</b>"
+        return s
+    out = []
+    for p in doc.paragraphs:
+        if not p.runs:
+            out.append(html.escape(p.text or ""))
+        else:
+            out.append("".join(wrap(r.text, r.bold, r.italic, r.underline) for r in p.runs))
+    return out
+
+
+
+def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1):
+    try:
+        djson_path = st.session_state.get('d_json_path')
+        if not djson_path or not os.path.exists(djson_path):
+            return None
+        with open(djson_path, "r", encoding="utf-8") as f:
+            paragraphs_html = json.load(f)  # list[str]
+    except Exception:
+        return None
+
+    def soup_text(html_s: str) -> str:
+        try:
+            soup = BeautifulSoup(html_s, "html.parser")
+            return soup.get_text() or ""
+        except Exception:
+            return html_s
+
+    dlg = dialogue
+    m_q = re.search(r'[“"]([^”"]+)[”"]', dlg) or re.search(r"[‘']([^’']+)[’']", dlg)
+    dialogue_to_highlight = m_q.group(1) if m_q else dlg
+    normalized_highlight = normalize_text(dialogue_to_highlight).lower()
+
+    if not normalized_highlight.strip():
+        occurrence_target = 1
+
+    plain_paras = [soup_text(p) for p in paragraphs_html]
+
+    cumulative = 0
+    chosen_idx = None
+    within_para_target = 1
+
+    for idx, para_plain in enumerate(plain_paras):
+        para_norm = normalize_text(para_plain).lower()
+        count_here = len(re.findall(re.escape(normalized_highlight), para_norm)) if normalized_highlight else 0
+        if count_here > 0:
+            if cumulative + count_here >= occurrence_target:
+                chosen_idx = idx
+                within_para_target = occurrence_target - cumulative
+                break
+            cumulative += count_here
+
+    if chosen_idx is None:
+        for idx, para_plain in enumerate(plain_paras):
+            if normalized_highlight in normalize_text(para_plain).lower():
+                chosen_idx = idx
+                within_para_target = 1
+                break
+
+    if chosen_idx is None:
+        return None
+
+    ctx = {}
+    if chosen_idx > 0:
+        ctx["previous"] = paragraphs_html[chosen_idx - 1]
+
+    try:
+        soup = BeautifulSoup(paragraphs_html[chosen_idx], "html.parser")
+        pattern = re.compile(re.escape(dialogue_to_highlight), re.IGNORECASE)
+
+        global_counter = 0
+        replaced_flag = False
+
+        def replace_only_mth(node):
+            nonlocal global_counter, replaced_flag
+            text_val = str(node)
+            parts = []
+            last = 0
+            for m in pattern.finditer(text_val):
+                global_counter += 1
+                parts.append(text_val[last:m.start()])
+                seg = m.group(0)
+                if (not replaced_flag) and global_counter == within_para_target:
+                    b = soup.new_tag("b")
+                    b.string = seg
+                    parts.append(b)
+                    replaced_flag = True
+                else:
+                    parts.append(seg)
+                last = m.end()
+            parts.append(text_val[last:])
+            if len(parts) > 1:
+                anchor = None
+                for i, part in enumerate(parts):
+                    new_node = soup.new_string(part) if isinstance(part, str) else part
+                    if i == 0:
+                        node.replace_with(new_node)
+                        anchor = new_node
+                    else:
+                        anchor.insert_after(new_node)
+                        anchor = new_node
+
+        for tnode in list(soup.find_all(string=True)):
+            parent_name = getattr(tnode.parent, "name", "").lower()
+            if parent_name in ("script", "style"):
+                continue
+            if replaced_flag:
+                continue
+            replace_only_mth(tnode)
+
+        if not replaced_flag:
+            global_counter = 0
+            replaced_flag = False
+            for tnode in list(soup.find_all(string=True)):
+                parent_name = getattr(tnode.parent, "name", "").lower()
+                if parent_name in ("script", "style"):
+                    continue
+                replace_only_mth(tnode)
+                if replaced_flag:
+                    break
+
+        ctx["current"] = str(soup)
+    except Exception:
+        ctx["current"] = paragraphs_html[chosen_idx]
+
+    if chosen_idx + 1 < len(paragraphs_html):
+        ctx["next"] = paragraphs_html[chosen_idx + 1]
+
+    return ctx
+
+
+#def compute_and_set_d_json_path():
+#    """Ensure JSON paragraph cache exists and set st.session_state['d_json_path'].
+#    JSON is written alongside the DOCX using the book name. No DOCX fallback in Step 2.
+#    """
+#    try:
+#        docx_path = st.session_state.get("docx_path")
+#        book_name = st.session_state.get("book_name") or "document"
+#        if not docx_path or not os.path.exists(docx_path):
+#            return
+#       folder = os.path.dirname(docx_path)
+#        json_path = os.path.join(folder, f"{book_name}.json")
+#        paragraphs = build_d_paragraphs_html(docx_path)
+#        with open(json_path, "w", encoding="utf-8") as f:
+#            json.dump(paragraphs, f, ensure_ascii=False, indent=2)
+#        st.session_state['d_json_path'] = json_path
+#    except Exception:
+#        # Do not fall back; if JSON generation fails, leave preview blank.
+#        pass
+
+def write_paragraph_json_for_session():
+    """Create or overwrite [userkey]-[bookname].json in the working directory
+    from st.session_state['docx_path'], set st.session_state['d_json_path'],
+    and never fall back to DOCX later. This runs only when 'Start Processing' is clicked.
+    """
+    try:
+        import os, json
+        docx_path = st.session_state.get('docx_path')
+        if not docx_path or not os.path.exists(docx_path):
+            return
+        userkey = st.session_state.get('userkey') or "User"
+        book_name = st.session_state.get('book_name') or "document"
+        json_path = os.path.join(os.getcwd(), f"{userkey}-{book_name}.json")
+        paragraphs = build_d_paragraphs_html(docx_path)
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(paragraphs, f, ensure_ascii=False, indent=2)
+        st.session_state['d_json_path'] = json_path
+    except Exception:
+        # Do not silently recreate elsewhere; leave preview blank if this fails.
+        pass
+
+#def ensure_d_json(docx_path, quotes_path):
+#    """Deprecated: use write_paragraph_json_for_session(). Keeping for backward compatibility."""
+#    write_paragraph_json_for_session()
+
 
 # Inject custom CSS
 custom_css = """
@@ -186,11 +435,11 @@ def smart_title(name):
     result = re.sub(r"\(([mf])\)$", lambda m: "(" + m.group(1).upper() + ")", result, flags=re.IGNORECASE)
     return result
 
-def write_file_atomic(filepath, lines):
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.writelines(lines)
-        f.flush()
-        os.fsync(f.fileno())
+#def write_file_atomic(filepath, lines):
+#    with open(filepath, "w", encoding="utf-8") as f:
+#        f.writelines(lines)
+#        f.flush()
+#        os.fsync(f.fileno())
 
 # ---------------------------
 # Auto-Save & Auto-Load Functions
@@ -270,6 +519,21 @@ def auto_load():
             with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_docx:
                 tmp_docx.write(docx_bytes)
                 st.session_state.docx_path = tmp_docx.name
+            # Ensure d_json_path points to the unified JSON cache: [userkey]-[book_name].json in CWD
+            try:
+                userkey = st.session_state.get("userkey")
+                book_name = st.session_state.get("book_name")
+                if userkey and book_name:
+                    cand = os.path.join(os.getcwd(), f"{userkey}-{book_name}.json")
+                    if os.path.exists(cand):
+                        st.session_state['d_json_path'] = cand
+                    else:
+                        # If the JSON cache is missing but we have a docx, rebuild it once
+                        if st.session_state.get('docx_path') and os.path.exists(st.session_state['docx_path']):
+                            write_paragraph_json_for_session()
+            except Exception:
+                pass
+
 
 if os.path.exists(get_progress_file()):
     if st.button("Load Saved Progress"):
@@ -332,18 +596,18 @@ def smart_join(run_texts):
             result += " " + text       # otherwise, insert a space
     return result
 
-def is_run_italic(run):
-    """Return True if the run is italic due to direct formatting or its character style."""
-    try:
-        if getattr(run.font, "italic", None) is True:
-            return True
-        style = getattr(run, "style", None)
-        if style is not None and getattr(style.font, "italic", None) is True:
-            return True
-    except Exception:
-        # Be conservative; if anything goes wrong, treat as non-italic
-        return False
-    return False
+# def is_run_italic(run):
+#    """Return True if the run is italic due to direct formatting or its character style."""
+#    try:
+#        if getattr(run.font, "italic", None) is True:
+#            return True
+#        style = getattr(run, "style", None)
+#        if style is not None and getattr(style.font, "italic", None) is True:
+#            return True
+#    except Exception:
+#        # Be conservative; if anything goes wrong, treat as non-italic
+#        return False
+#    return False
 
 def effective_run_italic(run, paragraph):
     """Return True if, after cascading styles, this run is italic.
@@ -368,10 +632,6 @@ def effective_run_italic(run, paragraph):
     except Exception:
         pass
     return base
-
-
-
-
 
 
 def extract_italicized_text(paragraph):
@@ -904,15 +1164,33 @@ if st.session_state.step == 1:
                     quotes_text = quotes_file.read().decode("utf-8")
                     st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
                     st.session_state.docx_only = False
+                    # Persist uploaded quotes to a consistent filename and ensure JSON cache for previews
+                    try:
+                        # Save uploaded quotes to working directory with userkey-bookname naming
+                        if 'userkey' in st.session_state and st.session_state.get('book_name'):
+                            quotes_filename = f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt"
+                        else:
+                            # Fallback name if userkey/book_name not set for any reason
+                            quotes_filename = "uploaded-quotes.txt"
+                        with open(quotes_filename, "w", encoding="utf-8") as _qf:
+                            _qf.write(quotes_text)
+                        # Ensure the paragraph JSON exists (no DOCX fallback in Step 2)
+                        write_paragraph_json_for_session()
+                    except Exception as _e:
+                        # Do not fail hard; Step 2 will show 'JSON cache not found yet' if this fails
+                        pass
                 else:
                     st.session_state.quotes_lines = None
                     st.session_state.docx_only = True
-                if speaker_colors_file is not None:
-                    raw = json.load(speaker_colors_file)
-                    st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
-                    save_speaker_colors(st.session_state.existing_speaker_colors)
-                else:
-                    st.session_state.existing_speaker_colors = {}
+                
+                    # Create/overwrite the paragraph JSON once here for docx-only case
+                    write_paragraph_json_for_session()
+                    if speaker_colors_file is not None:
+                        raw = json.load(speaker_colors_file)
+                        st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
+                        save_speaker_colors(st.session_state.existing_speaker_colors)
+                    else:
+                        st.session_state.existing_speaker_colors = {}
                 st.session_state.unknown_index = 0
                 st.session_state.console_log = []
                 if st.session_state.docx_only:
@@ -981,35 +1259,62 @@ elif st.session_state.step == 2:
     else:
         dialogue = remainder.lstrip(": ").rstrip("\n")
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
-        def get_context_for_dialogue(dialogue):
-            try:
-                doc = docx.Document(st.session_state.docx_path)
-            except Exception:
-                return None
-            normalized_dialogue = normalize_text(dialogue).lower()
-            for idx, para in enumerate(doc.paragraphs):
-                para_text = normalize_text(para.text)
-                if normalized_dialogue in para_text.lower():
-                    context = {}
-                    if idx > 0:
-                        context['previous'] = doc.paragraphs[idx-1].text
-                    pattern = re.compile(re.escape(dialogue), re.IGNORECASE)
-                    highlighted = pattern.sub(lambda m: f"<b>{m.group(0)}</b>", para.text)
-                    context['current'] = highlighted
-                    if idx+1 < len(doc.paragraphs):
-                        context['next'] = doc.paragraphs[idx+1].text
-                    return context
-            return None
-
-        context = get_context_for_dialogue(dialogue)
+        # Using global JSON-only context resolver
+        
+        # Compute occurrence target from previous two lines in quotes (quoted-segment aware)
+        occurrence_target = 1
+        try:
+            qlines = st.session_state.get("quotes_lines") or []
+            patt = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]+)(:.*)$")
+            def remainder_for(i):
+                if i is None or i < 0 or i >= len(qlines):
+                    return None
+                mm = patt.match(qlines[i])
+                if not mm:
+                    return None
+                return mm.group(3).lstrip(": ").rstrip("\n")
+            def first_quoted_segment(s: str) -> str:
+                if s is None:
+                    return ""
+                m1 = re.search(r'[“"]([^”"]+)[”"]', s)
+                if not m1:
+                    m1 = re.search(r"[‘']([^’']+)[’']", s)
+                return m1.group(1) if m1 else s
+            curr_seg = first_quoted_segment(dialogue)
+            curr_norm = normalize_text(curr_seg).lower()
+            prev1 = remainder_for(index-1)
+            prev2 = remainder_for(index-2)
+            prev1_norm = normalize_text(first_quoted_segment(prev1)).lower() if prev1 else ""
+            prev2_norm = normalize_text(first_quoted_segment(prev2)).lower() if prev2 else ""
+            count_prev_same = int(prev1_norm == curr_norm) + int(prev2_norm == curr_norm)
+            occurrence_target = 1 + count_prev_same
+#            st.session_state._dbg_occurrence_target = occurrence_target
+#            st.session_state._dbg_prev1_norm = prev1_norm
+#            st.session_state._dbg_prev2_norm = prev2_norm
+#            st.session_state._dbg_curr_norm = curr_norm
+        except Exception:
+            pass
+        context = get_context_for_dialogue_json_only(dialogue, occurrence_target=occurrence_target)
         if context:
+            # Remember the currently displayed previous paragraph for potential trimming upon match
+            try:
+                st.session_state.context_previous_candidate = context.get("previous")
+            except Exception:
+                st.session_state.context_previous_candidate = None
             if "previous" in context:
-                st.write(context["previous"])
-            st.markdown(context["current"], unsafe_allow_html=True)
+                st.markdown(neutralize_markdown_in_html(context["previous"]), unsafe_allow_html=True)
+            st.markdown(neutralize_markdown_in_html(context["current"]), unsafe_allow_html=True)
+#            try:
+#                st.text('DEBUG CMP: curr=' + str(st.session_state.get('_dbg_curr_norm'))
+#                         + ' | prev1=' + str(st.session_state.get('_dbg_prev1_norm'))
+#                         + ' | prev2=' + str(st.session_state.get('_dbg_prev2_norm')))
+#            except Exception:
+#                pass
+
             if "next" in context:
-                st.write(context["next"])
+                st.markdown(neutralize_markdown_in_html(context["next"]), unsafe_allow_html=True)
         else:
-            st.write("No context found in DOCX for this quote.")
+            st.write("No context found in cached JSON for this quote.")
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
         st.write(f"**Dialogue (Line {index+1}):** {dialogue}")
         
@@ -1036,6 +1341,18 @@ elif st.session_state.step == 2:
                     st.session_state.console_log.insert(0, "Nothing to undo.")
             else:
                 st.session_state.last_update = (index, st.session_state.quotes_lines[index])
+                # On confirmed match only (not skip/exit/undo), trim paragraph cache before the "previous" that was displayed.
+                try:
+                    prev_for_trim = st.session_state.get("context_previous_candidate")
+                except Exception:
+                    prev_for_trim = None
+                try:
+                    _trim_ok = trim_paragraph_cache_before_previous(prev_for_trim)
+                    if _trim_ok:
+                        st.session_state.console_log.insert(0, "Trimmed paragraph cache before previous context.")
+                except Exception:
+                    pass
+
                 updated_speaker = smart_title(new_speaker)
 
                 # Increment count for unflagged speakers and flag at 10
@@ -1320,7 +1637,8 @@ elif st.session_state.step == 4:
             get_saved_colors_file(),
             get_unmatched_quotes_filename(),
             f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt",
-            f"{st.session_state.userkey}-{st.session_state.book_name}.html"
+            f"{st.session_state.userkey}-{st.session_state.book_name}.html",
+            f"{st.session_state.userkey}-{st.session_state.book_name}.json"
         ]
         for path in files_to_remove:
             try:
