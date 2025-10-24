@@ -1368,8 +1368,16 @@ elif st.session_state.step == 2:
             prev2 = remainder_for(index-2)
             prev1_norm = normalize_text(first_quoted_segment(prev1)).lower() if prev1 else ""
             prev2_norm = normalize_text(first_quoted_segment(prev2)).lower() if prev2 else ""
-            count_prev_same = int(prev1_norm == curr_norm) + int(prev2_norm == curr_norm)
-            occurrence_target = 1 + count_prev_same
+            def _norm_contains(a: str, b: str) -> bool:
+                try:
+                    if not a or not b:
+                        return False
+                    # One-way containment: treat as repeat only if CURRENT (a) is within PREVIOUS (b)
+                    return a in b
+                except Exception:
+                    return False
+            
+            count_prev_same = int(_norm_contains(curr_norm, prev1_norm)) + int(_norm_contains(curr_norm, prev2_norm))            occurrence_target = 1 + count_prev_same
 #            st.session_state._dbg_occurrence_target = occurrence_target
 #            st.session_state._dbg_prev1_norm = prev1_norm
 #            st.session_state._dbg_prev2_norm = prev2_norm
@@ -1520,7 +1528,7 @@ elif st.session_state.step == 3:
             try:
                 default_index = color_options.index(default_color.title())
             except ValueError:
-                default_index 	= color_options.index("None")
+                default_index   = color_options.index("None")
             selected = st.selectbox(sp, options=color_options, index=default_index, key="new_"+norm)
             updated_colors[norm] = selected.lower()
         # Merge updated colors with any already assigned values.
