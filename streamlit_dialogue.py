@@ -1377,7 +1377,8 @@ elif st.session_state.step == 2:
                 except Exception:
                     return False
             
-            count_prev_same = int(_norm_contains(curr_norm, prev1_norm)) + int(_norm_contains(curr_norm, prev2_norm))            occurrence_target = 1 + count_prev_same
+            count_prev_same = int(_norm_contains(curr_norm, prev1_norm)) + int(_norm_contains(curr_norm, prev2_norm))            
+            occurrence_target = 1 + count_prev_same
 #            st.session_state._dbg_occurrence_target = occurrence_target
 #            st.session_state._dbg_prev1_norm = prev1_norm
 #            st.session_state._dbg_prev2_norm = prev2_norm
