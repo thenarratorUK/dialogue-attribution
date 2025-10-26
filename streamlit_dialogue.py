@@ -1243,11 +1243,11 @@ if st.session_state.step == 1:
                     tmp_docx.write(st.session_state.docx_bytes)
                     st.session_state.docx_path = tmp_docx.name
                 if speaker_colors_file is not None:
-                        raw = json.load(speaker_colors_file)
-                        st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
-                        save_speaker_colors(st.session_state.existing_speaker_colors)
-                    else:
-                        st.session_state.existing_speaker_colors = {}
+                    raw = json.load(speaker_colors_file)
+                    st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in raw.items()}
+                    save_speaker_colors(st.session_state.existing_speaker_colors)
+                else:
+                    st.session_state.existing_speaker_colors = {}
                 if quotes_file is not None:
                     quotes_text = quotes_file.read().decode("utf-8")
                     st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
