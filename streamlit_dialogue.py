@@ -1,4 +1,4 @@
-import streamlit as st
+loop import streamlit as st
 import re
 import os
 import json
@@ -746,15 +746,13 @@ def extract_dialogue_from_docx(book_name, docx_path):
     for para in doc.paragraphs:
         text = para.text.strip()
         quotes = quote_pattern.findall(text)
-        if quotes:
-            for quote in quotes:
-                dialogue_list.append(f"{line_number}. Unknown: {quote}")
-                line_number += 1
-        else:
-            italic_texts = extract_italicized_text(para)
-            for italic_text in italic_texts:
-                dialogue_list.append(f"{line_number}. Unknown: {italic_text}")
-                line_number += 1
+        for quote in quotes:
+            dialogue_list.append(f"{line_number}. Unknown: {quote}")
+            line_number += 1
+        italic_texts = extract_italicized_text(para)
+        for italic_text in italic_texts:
+            dialogue_list.append(f"{line_number}. Unknown: {italic_text}")
+            line_number += 1
     output_path = f"{st.session_state.userkey}-{book_name}-quotes.txt"
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(dialogue_list))
