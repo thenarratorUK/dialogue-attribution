@@ -734,6 +734,7 @@ def extract_italicized_text(paragraph):
             current_block = []
     # flush tail
     joined = smart_join(current_block)
+    joined = re.sub(r'^\.\s+(?=\w)', '', joined)
     if len(joined.split()) >= 2:
         italic_blocks.append(joined)
     return italic_blocks
