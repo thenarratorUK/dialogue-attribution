@@ -746,35 +746,6 @@ def extract_dialogue_from_docx(book_name, docx_path):
     for para in doc.paragraphs:
         text = para.text.strip()
         quotes = quote_pattern.findall(text)
-            # Orphan-quote fallbacks: run only if no paired quotes were matched
-    if not quotes:
-        # Helpers to locate first/last positions among multiple candidate characters
-        def _first_pos(s, chars):
-            idxs = [s.find(c) for c in chars]
-            idxs = [i for i in idxs if i != -1]
-            return min(idxs) if idxs else -1
-
-        def _last_pos(s, chars):
-            idxs = [s.rfind(c) for c in chars]
-            idxs = [i for i in idxs if i != -1]
-            return max(idxs) if idxs else -1
-
-        OPEN = ('“', '"')   # treat straight quote as opening if it appears first
-        CLOSE = ('”', '"')  # treat straight quote as closing if it appears first
-
-        first_open = _first_pos(text, OPEN)
-        first_close = _first_pos(text, CLOSE)
-
-        # Fallback A: closing quote appears with no earlier opening -> start..closing
-        if first_close != -1 and (first_open == -1 or first_close < first_open):
-            quotes = [text[:first_close + 1].strip()]
-        else:
-            # Fallback B: opening quote appears and no later closing -> opening..end
-            last_open = _last_pos(text, OPEN)
-            if last_open != -1:
-                any_close_after = any(text.find(c, last_open + 1) != -1 for c in CLOSE)
-                if not any_close_after:
-                    quotes = [text[last_open:].strip()]
         for quote in quotes:
             dialogue_list.append(f"{line_number}. Unknown: {quote}")
             line_number += 1
