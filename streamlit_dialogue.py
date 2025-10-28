@@ -745,7 +745,73 @@ def extract_dialogue_from_docx(book_name, docx_path):
     line_number = 1
     for para in doc.paragraphs:
         text = para.text.strip()
-        quotes = quote_pattern.findall(text)
+    
+        # 1) First, collect all *paired* quote matches found by the existing regex
+        matches = list(quote_pattern.finditer(text))  # keep as-is regex; no DOTALL
+        quotes = [m.group(1) for m in matches]
+    
+        # Track character spans covered by paired matches (group 1 only)
+        covered = [(m.start(1), m.end(1)) for m in matches]
+    
+        def _in_covered(idx: int) -> bool:
+            for a, b in covered:
+                if a <= idx < b:
+                    return True
+            return False
+    
+        OPEN = {'“', '"'}
+        CLOSE = {'”', '"'}
+    
+        # 2) Orphan-quote fallbacks relative to *uncovered* characters in this paragraph
+    
+        # 2a) Closing quote appears before any *unmatched* opening quote in this paragraph:
+        #     capture from start .. that closing quote (inclusive).
+        first_unmatched_close = -1
+        seen_unmatched_open = False
+        first_unmatched_open = -1  # first OPEN that is not part of a paired match
+        i = 0
+        while i < len(text):
+            # skip over already-paired spans to avoid double counting
+            skipped = False
+            for a, b in covered:
+                if i == a:
+                    i = b
+                    skipped = True
+                    break
+            if skipped:
+                continue
+    
+            ch = text[i]
+            if ch in OPEN and not _in_covered(i) and first_unmatched_open == -1:
+                first_unmatched_open = i
+                seen_unmatched_open = True
+            elif ch in CLOSE and not _in_covered(i) and not seen_unmatched_open:
+                first_unmatched_close = i
+                break
+            i += 1
+    
+        if first_unmatched_close != -1:
+            seg = text[: first_unmatched_close + 1].strip()
+            if seg and not any(a == 0 and b >= first_unmatched_close + 1 for a, b in covered):
+                quotes.append(seg)
+    
+        # 2b) Opening quote appears with **no paired closing** after it in this paragraph:
+        #     capture from that opening .. end.
+        #     (We only care about opens that are not the start of a paired match.)
+        last_unmatched_open = -1
+        for idx, ch in enumerate(text):
+            if ch in OPEN and not _in_covered(idx):
+                last_unmatched_open = idx
+        if last_unmatched_open != -1:
+            # Is there any *paired* close after this open? If not, treat as orphan-open.
+            has_paired_close_after = any(a >= 0 and a > last_unmatched_open for (a, b) in [(m.end(1) - 1, m.end(1)) for m in matches])
+            if not has_paired_close_after:
+                seg = text[last_unmatched_open:].strip()
+                # avoid duplicate if an identical segment was already captured
+                if seg and all(not (s == seg) for s in quotes):
+                    quotes.append(seg)
+    
+        # 3) Emit all captured quote segments (paired + any fallbacks)
         for quote in quotes:
             dialogue_list.append(f"{line_number}. Unknown: {quote}")
             line_number += 1
