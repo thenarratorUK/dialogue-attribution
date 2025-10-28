@@ -739,7 +739,7 @@ def extract_italicized_text(paragraph):
     return italic_blocks
 def extract_dialogue_from_docx(book_name, docx_path):
     doc = docx.Document(docx_path)
-    quote_pattern = re.compile(r'(?:^|\s)(["“].+?["”])(?=$|\s)')
+    quote_pattern = re.compile(r'(?:^|\s)(["“].+?["”])(?=$|[\s\.\,\;\:\!\?\)\]\}])')
     dialogue_list = []
     line_number = 1
     for para in doc.paragraphs:
