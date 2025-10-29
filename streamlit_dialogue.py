@@ -738,6 +738,54 @@ def extract_italicized_text(paragraph):
     if len(joined.split()) >= 2:
         italic_blocks.append(joined)
     return italic_blocks
+def extract_italic_spans(paragraph):
+    """
+    Return a list of ((start, end), text) for contiguous italic blocks in this paragraph,
+    using the same cascade logic and >=2-word rule as extract_italicized_text.
+    Spans are computed against the raw concatenation of run.text (paragraph.text),
+    with adjustment if a leading ". " is stripped.
+    """
+    spans = []
+    pos = 0
+    block_start = None
+    block_raw = []  # raw run.text pieces
+
+    for run in paragraph.runs:
+        t = run.text or ""
+        n = len(t)
+        if effective_run_italic(run, paragraph):
+            if block_start is None:
+                block_start = pos
+            block_raw.append(t)
+        else:
+            if block_start is not None:
+                raw = "".join(block_raw)
+                joined = smart_join(block_raw)
+                shift = 0
+                if re.match(r'^\.\s+(?=\w)', joined):
+                    shift = 2
+                    joined = joined[2:]
+                if len(joined.split()) >= 2:
+                    start = block_start + shift
+                    end = start + max(0, len(raw) - shift)
+                    spans.append(((start, end), joined))
+                block_start = None
+                block_raw = []
+        pos += n
+
+    if block_start is not None:
+        raw = "".join(block_raw)
+        joined = smart_join(block_raw)
+        shift = 0
+        if re.match(r'^\.\s+(?=\w)', joined):
+            shift = 2
+            joined = joined[2:]
+        if len(joined.split()) >= 2:
+            start = block_start + shift
+            end = start + max(0, len(raw) - shift)
+            spans.append(((start, end), joined))
+
+    return spans
 def extract_dialogue_from_docx(book_name, docx_path):
     doc = docx.Document(docx_path)
     quote_pattern = re.compile(r'(?:^|\s)(["“].+?["”])(?=$|[\s\.\,\;\:\!\?\)\]\}])')
@@ -776,7 +824,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
                 seg_span = (0, first_close + 1)
                 seg = text[seg_span[0]:seg_span[1]].strip()
                 if seg:
-                    ordered.append(seg)
+                    ordered.append((span, seg))
                     covered.append(seg_span)
                 break  # only the first closing-only segment per paragraph
 
@@ -786,7 +834,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
             if not _is_covered(span):
                 seg = m.group(1).strip()
                 if seg:
-                    ordered.append(seg)
+                    ordered.append((seg_span, seg))
                     covered.append(span)
 
         # 3) Opening-only: last opening with no closing after -> opening..end
@@ -809,17 +857,25 @@ def extract_dialogue_from_docx(book_name, docx_path):
                 if not _is_covered(seg_span):
                     seg = text[seg_span[0]:seg_span[1]].strip()
                     if seg:
-                        ordered.append(seg)
+                        ordered.append((seg_span, seg))
                         covered.append(seg_span)
 
-        # Emit in enforced order
-        for seg in ordered:
+        # Merge quotes (with spans) and italics (with spans), then sort by reading order
+        items = []  # list of ((start, end), text)
+
+        # quotes collected earlier as (span, text)
+        for span, seg in ordered:
+            items.append((span, seg))
+
+        # italics with spans
+        for span, seg in extract_italic_spans(para):
+            items.append((span, seg))
+
+        # sort: start asc, then longer span first (desc)
+        items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
+
+        for _, seg in items:
             dialogue_list.append(f"{line_number}. Unknown: {seg}")
-            line_number += 1
-            
-        italic_texts = extract_italicized_text(para)
-        for italic_text in italic_texts:
-            dialogue_list.append(f"{line_number}. Unknown: {italic_text}")
             line_number += 1
     output_path = f"{st.session_state.userkey}-{book_name}-quotes.txt"
     with open(output_path, "w", encoding="utf-8") as f:
