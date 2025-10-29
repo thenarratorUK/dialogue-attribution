@@ -629,68 +629,67 @@ ATTACH_NO_SPACE = {"'", "’", "‘", '"', "“", "”", ",", ".", ";", ":", "?"
 DASHES = {"-", "–", "—"}
 
 def smart_join(run_texts):
+    """
+    Join a sequence of run texts, inserting spaces only when appropriate,
+    and preventing spaces at tight punctuation boundaries so the output
+    mirrors Word's typographic intent:
+      - No space after opening quotes/brackets: ( [ { “ "
+      - No space before closing quotes/brackets or ™/®: ) ] } ” " ™ ®
+      - No space before punctuation that binds to the previous token: , . ; : ! ? … — –
+      - Avoid spaces *inside* parentheses due to run boundaries.
+    """
     if not run_texts:
         return ""
-    result = run_texts[0]
-    for text in run_texts[1:]:
+    result = (run_texts[0] or "")
+    for chunk in run_texts[1:]:
+        text = chunk or ""
         if not text:
             continue
 
-        # preserve any explicit/trailing spaces already in the text
+        # Respect explicit trailing/leading spaces in either side
         if result and result[-1].isspace():
             result += text.lstrip()
             continue
-        if text[0].isspace():
+        if text and text[0].isspace():
             result += text
             continue
 
-        # ellipses should attach to the previous token
-        if text.startswith("...") or text.startswith("…"):
-            result = result.rstrip()
+        prev = result[-1] if result else ""
+        first = text[0] if text else ""
+
+        OPEN_TIGHT = set('([{"“')
+        CLOSE_TIGHT = set(')]}”"')
+        NO_SPACE_BEFORE = set(',.;:!?' + '…—–' + '™®')
+
+        # 1) Tight join after an opening quote/paren/bracket
+        if prev in OPEN_TIGHT:
             result += text
             continue
-
-        prev = result[-1]
-        first = text[0]
-
-        # 1) Contractions/possessives: apostrophe binds to following letters (That’s, you’re, I’ll)
-        if prev in {"'", "’", "‘"} and first.isalnum():
+        # 2) Tight join before a closing quote/paren/bracket or ™/® or tight punctuation
+        if first in CLOSE_TIGHT or first in NO_SPACE_BEFORE:
             result += text
             continue
+        # 3) Default: insert a single space between tokens
+        result += ' ' + text
 
-        # 2) Characters that attach to the previous token (no leading space)
-        if first in ATTACH_NO_SPACE:
-            result += text
-            continue
-
-        # 3) Dashes/hyphens: attach tightly on both sides
-        if first in DASHES:
-            result += text            # no space before dash
-            continue
-        if prev in DASHES:
-            result += text            # no space after dash
-            continue
-
-        # 4) Default spacing rule
-        if prev.isalnum() and first.isalnum():
-            result += text            # join words without extra space
-        else:
-            result += " " + text       # otherwise, insert a space
     return result
-
-# def is_run_italic(run):
-#    """Return True if the run is italic due to direct formatting or its character style."""
-#    try:
-#        if getattr(run.font, "italic", None) is True:
-#            return True
-#        style = getattr(run, "style", None)
-#        if style is not None and getattr(style.font, "italic", None) is True:
-#            return True
-#    except Exception:
-#        # Be conservative; if anything goes wrong, treat as non-italic
-#        return False
-#    return False
-
+def _fix_punct_adjacency(s: str) -> str:
+    """
+    Source-level fixes applied before writing quotes.txt:
+    - Remove space after an opening quote (“ or ")
+    - Remove space before a closing quote (” or ")
+    - Remove space before ™/®
+    - Remove inner spaces just inside parentheses
+    """
+    if not s:
+        return s
+    spacelike = r"[ \u00A0\u2009\u200A\u200B\u202F\u205F\u3000]"
+    s = re.sub(rf'(?<=["“]){spacelike}+', '', s)
+    s = re.sub(rf'{spacelike}+(?=["”])', '', s)
+    s = re.sub(rf'{spacelike}+(?=[™®])', '', s)
+    s = re.sub(rf'\({spacelike}+', '(', s)
+    s = re.sub(rf'{spacelike}+\)', ')', s)
+    return s
 def effective_run_italic(run, paragraph):
     """Return True if, after cascading styles, this run is italic.
     Precedence (lowest to highest): paragraph style -> run character style -> direct run formatting.
@@ -875,7 +874,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
         items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
-            dialogue_list.append(f"{line_number}. Unknown: {seg}")
+            dialogue_list.append(f"{line_number}. Unknown: {_fix_punct_adjacency(seg)}")
             line_number += 1
     output_path = f"{st.session_state.userkey}-{book_name}-quotes.txt"
     with open(output_path, "w", encoding="utf-8") as f:
