@@ -681,6 +681,11 @@ def smart_join(run_texts):
             if first in {'™','®'} or prev == '(' or first == ')':
                 result += text
                 continue
+            # Guard: keep opening double-quote tight with the next token
+            prev = result[-1] if result else ''
+            if prev in {'“', '"'}:
+                result += text
+                continue
             result += " " + text       # otherwise, insert a space
     return result
 
