@@ -631,12 +631,12 @@ DASHES = {"-", "–", "—"}
 def smart_join(run_texts):
     if not run_texts:
         return ""
-    result = run_texts[0] or ""
+    result = run_texts[0]
     for text in run_texts[1:]:
         if not text:
             continue
 
-        # honour explicit/trailing spaces
+        # preserve any explicit/trailing spaces already in the text
         if result and result[-1].isspace():
             result += text.lstrip()
             continue
@@ -644,19 +644,58 @@ def smart_join(run_texts):
             result += text
             continue
 
-        prev = result[-1] if result else ""
-        first = text[0]
-
-        # ONLY the requested guards:
-        # - no space before ™/®
-        # - avoid spaces inside parentheses at run boundaries
-        if first in {'™', '®'} or prev == '(' or first == ')':
+        # ellipses should attach to the previous token
+        if text.startswith("...") or text.startswith("…"):
+            result = result.rstrip()
             result += text
             continue
 
-        # default: single space
-        result += ' ' + text
+        prev = result[-1]
+        first = text[0]
+
+        # 1) Contractions/possessives: apostrophe binds to following letters (That’s, you’re, I’ll)
+        if prev in {"'", "’", "‘"} and first.isalnum():
+            result += text
+            continue
+
+        # 2) Characters that attach to the previous token (no leading space)
+        if first in ATTACH_NO_SPACE:
+            result += text
+            continue
+
+        # 3) Dashes/hyphens: attach tightly on both sides
+        if first in DASHES:
+            result += text            # no space before dash
+            continue
+        if prev in DASHES:
+            result += text            # no space after dash
+            continue
+
+        # 4) Default spacing rule
+        if prev.isalnum() and first.isalnum():
+            result += text            # join words without extra space
+        else:
+            # Added guards (surgical): avoid space before ™/® and inside parentheses
+            prev = result[-1] if result else ''
+            first = text[0] if text else ''
+            if first in {'™','®'} or prev == '(' or first == ')':
+                result += text
+                continue
+            result += " " + text       # otherwise, insert a space
     return result
+
+# def is_run_italic(run):
+#    """Return True if the run is italic due to direct formatting or its character style."""
+#    try:
+#        if getattr(run.font, "italic", None) is True:
+#            return True
+#        style = getattr(run, "style", None)
+#        if style is not None and getattr(style.font, "italic", None) is True:
+#            return True
+#    except Exception:
+#        # Be conservative; if anything goes wrong, treat as non-italic
+#        return False
+#    return False
 def effective_run_italic(run, paragraph):
     """Return True if, after cascading styles, this run is italic.
     Precedence (lowest to highest): paragraph style -> run character style -> direct run formatting.
@@ -685,7 +724,7 @@ def effective_run_italic(run, paragraph):
 def extract_italicized_text(paragraph):
     """
     def _trim_quote_edges(s: str) -> str:
-        # Minimal parity with quote path: trim space just inside quotes
+        # Italics-path parity: remove spaces just inside opening/closing double quotes
         s = re.sub(r'(?<=[“\"])\\s+', '', s)
         s = re.sub(r'\\s+(?=[”\"])', '', s)
         return s
@@ -701,12 +740,12 @@ def extract_italicized_text(paragraph):
         else:
             joined = smart_join(current_block)
             joined = _trim_quote_edges(joined)
-            joined = _trim_quote_edges(joined)
             if len(joined.split()) >= 2:
                 italic_blocks.append(joined)
             current_block = []
     # flush tail
     joined = smart_join(current_block)
+    joined = _trim_quote_edges(joined)
     joined = re.sub(r'^\.\s+(?=\w)', '', joined)
     if len(joined.split()) >= 2:
         italic_blocks.append(joined)
