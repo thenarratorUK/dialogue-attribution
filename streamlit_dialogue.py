@@ -748,7 +748,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
     
         # Build ordered segments: closing-only -> paired -> opening-only
         matches = list(quote_pattern.finditer(text))  # paired matches
-        covered = [(m.start(1), m.end(1)) for m in matches]
+        covered = []
 
         def _overlaps(a, b):
             # a, b are (start, end) half-open intervals
