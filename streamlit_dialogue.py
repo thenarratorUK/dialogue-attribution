@@ -629,67 +629,34 @@ ATTACH_NO_SPACE = {"'", "’", "‘", '"', "“", "”", ",", ".", ";", ":", "?"
 DASHES = {"-", "–", "—"}
 
 def smart_join(run_texts):
-    """
-    Join a sequence of run texts, inserting spaces only when appropriate,
-    and preventing spaces at tight punctuation boundaries so the output
-    mirrors Word's typographic intent:
-      - No space after opening quotes/brackets: ( [ { “ "
-      - No space before closing quotes/brackets or ™/®: ) ] } ” " ™ ®
-      - No space before punctuation that binds to the previous token: , . ; : ! ? … — –
-      - Avoid spaces *inside* parentheses due to run boundaries.
-    """
     if not run_texts:
         return ""
-    result = (run_texts[0] or "")
-    for chunk in run_texts[1:]:
-        text = chunk or ""
+    result = run_texts[0] or ""
+    for text in run_texts[1:]:
         if not text:
             continue
 
-        # Respect explicit trailing/leading spaces in either side
+        # honour explicit/trailing spaces
         if result and result[-1].isspace():
             result += text.lstrip()
             continue
-        if text and text[0].isspace():
+        if text[0].isspace():
             result += text
             continue
 
         prev = result[-1] if result else ""
-        first = text[0] if text else ""
+        first = text[0]
 
-        OPEN_TIGHT = set('([{"“')
-        CLOSE_TIGHT = set(')]}”"')
-        NO_SPACE_BEFORE = set(',.;:!?' + '…—–' + '™®')
-
-        # 1) Tight join after an opening quote/paren/bracket
-        if prev in OPEN_TIGHT:
+        # ONLY the requested guards:
+        # - no space before ™/®
+        # - avoid spaces inside parentheses at run boundaries
+        if first in {'™', '®'} or prev == '(' or first == ')':
             result += text
             continue
-        # 2) Tight join before a closing quote/paren/bracket or ™/® or tight punctuation
-        if first in CLOSE_TIGHT or first in NO_SPACE_BEFORE:
-            result += text
-            continue
-        # 3) Default: insert a single space between tokens
+
+        # default: single space
         result += ' ' + text
-
     return result
-def _fix_punct_adjacency(s: str) -> str:
-    """
-    Source-level fixes applied before writing quotes.txt:
-    - Remove space after an opening quote (“ or ")
-    - Remove space before a closing quote (” or ")
-    - Remove space before ™/®
-    - Remove inner spaces just inside parentheses
-    """
-    if not s:
-        return s
-    spacelike = r"[ \u00A0\u2009\u200A\u200B\u202F\u205F\u3000]"
-    s = re.sub(rf'(?<=["“]){spacelike}+', '', s)
-    s = re.sub(rf'{spacelike}+(?=["”])', '', s)
-    s = re.sub(rf'{spacelike}+(?=[™®])', '', s)
-    s = re.sub(rf'\({spacelike}+', '(', s)
-    s = re.sub(rf'{spacelike}+\)', ')', s)
-    return s
 def effective_run_italic(run, paragraph):
     """Return True if, after cascading styles, this run is italic.
     Precedence (lowest to highest): paragraph style -> run character style -> direct run formatting.
@@ -717,6 +684,11 @@ def effective_run_italic(run, paragraph):
 
 def extract_italicized_text(paragraph):
     """
+    def _trim_quote_edges(s: str) -> str:
+        # Minimal parity with quote path: trim space just inside quotes
+        s = re.sub(r'(?<=[“\"])\\s+', '', s)
+        s = re.sub(r'\\s+(?=[”\"])', '', s)
+        return s
     Return a list of italic blocks for a paragraph.
     Detects italics after cascading: paragraph style -> character style -> direct run formatting.
     Preserves the existing >= 2-word threshold and smart_join behaviour.
@@ -728,6 +700,8 @@ def extract_italicized_text(paragraph):
             current_block.append(run.text)
         else:
             joined = smart_join(current_block)
+            joined = _trim_quote_edges(joined)
+            joined = _trim_quote_edges(joined)
             if len(joined.split()) >= 2:
                 italic_blocks.append(joined)
             current_block = []
@@ -874,7 +848,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
         items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
-            dialogue_list.append(f"{line_number}. Unknown: {_fix_punct_adjacency(seg)}")
+            dialogue_list.append(f"{line_number}. Unknown: {seg}")
             line_number += 1
     output_path = f"{st.session_state.userkey}-{book_name}-quotes.txt"
     with open(output_path, "w", encoding="utf-8") as f:
