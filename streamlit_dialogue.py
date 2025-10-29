@@ -746,75 +746,77 @@ def extract_dialogue_from_docx(book_name, docx_path):
     for para in doc.paragraphs:
         text = para.text.strip()
     
-        # 1) First, collect all *paired* quote matches found by the existing regex
-        matches = list(quote_pattern.finditer(text))  # keep as-is regex; no DOTALL
-        quotes = [m.group(1) for m in matches]
-    
-        # Track character spans covered by paired matches (group 1 only)
+        # Build ordered segments: closing-only -> paired -> opening-only
+        matches = list(quote_pattern.finditer(text))  # paired matches
         covered = [(m.start(1), m.end(1)) for m in matches]
-    
-        def _in_covered(idx: int) -> bool:
-            for a, b in covered:
-                if a <= idx < b:
-                    return True
-            return False
-    
+
+        def _overlaps(a, b):
+            # a, b are (start, end) half-open intervals
+            return not (a[1] <= b[0] or b[1] <= a[0])
+
+        def _is_covered(span):
+            return any(_overlaps(span, c) for c in covered)
+
         OPEN = {'“', '"'}
         CLOSE = {'”', '"'}
-    
-        # 2) Orphan-quote fallbacks relative to *uncovered* characters in this paragraph
-    
-        # 2a) Closing quote appears before any *unmatched* opening quote in this paragraph:
-        #     capture from start .. that closing quote (inclusive).
-        first_unmatched_close = -1
-        seen_unmatched_open = False
-        first_unmatched_open = -1  # first OPEN that is not part of a paired match
-        i = 0
-        while i < len(text):
-            # skip over already-paired spans to avoid double counting
-            skipped = False
-            for a, b in covered:
-                if i == a:
-                    i = b
-                    skipped = True
-                    break
-            if skipped:
+
+        ordered = []
+
+        # 1) Closing-only: first closing before any opening in *uncovered* text
+        first_close = -1
+        first_open = -1
+        for i, ch in enumerate(text):
+            if _is_covered((i, i + 1)):
                 continue
-    
-            ch = text[i]
-            if ch in OPEN and not _in_covered(i) and first_unmatched_open == -1:
-                first_unmatched_open = i
-                seen_unmatched_open = True
-            elif ch in CLOSE and not _in_covered(i) and not seen_unmatched_open:
-                first_unmatched_close = i
-                break
-            i += 1
-    
-        if first_unmatched_close != -1:
-            seg = text[: first_unmatched_close + 1].strip()
-            if seg and not any(a == 0 and b >= first_unmatched_close + 1 for a, b in covered):
-                quotes.append(seg)
-    
-        # 2b) Opening quote appears with **no paired closing** after it in this paragraph:
-        #     capture from that opening .. end.
-        #     (We only care about opens that are not the start of a paired match.)
-        last_unmatched_open = -1
-        for idx, ch in enumerate(text):
-            if ch in OPEN and not _in_covered(idx):
-                last_unmatched_open = idx
-        if last_unmatched_open != -1:
-            # Is there any *paired* close after this open? If not, treat as orphan-open.
-            has_paired_close_after = any(a >= 0 and a > last_unmatched_open for (a, b) in [(m.end(1) - 1, m.end(1)) for m in matches])
-            if not has_paired_close_after:
-                seg = text[last_unmatched_open:].strip()
-                # avoid duplicate if an identical segment was already captured
-                if seg and all(not (s == seg) for s in quotes):
-                    quotes.append(seg)
-    
-        # 3) Emit all captured quote segments (paired + any fallbacks)
-        for quote in quotes:
-            dialogue_list.append(f"{line_number}. Unknown: {quote}")
+            if ch in CLOSE and first_close == -1:
+                first_close = i
+            if ch in OPEN and first_open == -1:
+                first_open = i
+            if first_close != -1 and (first_open == -1 or first_close < first_open):
+                seg_span = (0, first_close + 1)
+                seg = text[seg_span[0]:seg_span[1]].strip()
+                if seg:
+                    ordered.append(seg)
+                    covered.append(seg_span)
+                break  # only the first closing-only segment per paragraph
+
+        # 2) Paired quotes: use existing regex; skip spans already covered
+        for m in matches:
+            span = (m.start(1), m.end(1))
+            if not _is_covered(span):
+                seg = m.group(1).strip()
+                if seg:
+                    ordered.append(seg)
+                    covered.append(span)
+
+        # 3) Opening-only: last opening with no closing after -> opening..end
+        last_open = -1
+        for i, ch in enumerate(text):
+            if ch in OPEN and not _is_covered((i, i + 1)):
+                last_open = i
+
+        if last_open != -1:
+            # any *uncovered* closing after last_open?
+            has_close_after = False
+            j = last_open + 1
+            while j < len(text):
+                if not _is_covered((j, j + 1)) and text[j] in CLOSE:
+                    has_close_after = True
+                    break
+                j += 1
+            if not has_close_after:
+                seg_span = (last_open, len(text))
+                if not _is_covered(seg_span):
+                    seg = text[seg_span[0]:seg_span[1]].strip()
+                    if seg:
+                        ordered.append(seg)
+                        covered.append(seg_span)
+
+        # Emit in enforced order
+        for seg in ordered:
+            dialogue_list.append(f"{line_number}. Unknown: {seg}")
             line_number += 1
+            
         italic_texts = extract_italicized_text(para)
         for italic_text in italic_texts:
             dialogue_list.append(f"{line_number}. Unknown: {italic_text}")
