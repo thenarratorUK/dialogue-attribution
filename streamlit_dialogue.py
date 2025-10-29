@@ -804,6 +804,7 @@ def extract_italic_spans(paragraph):
 
     return spans
 def extract_dialogue_from_docx(book_name, docx_path):
+    quote_spans = []  # (start, end) spans for quotes in this paragraph
     doc = docx.Document(docx_path)
     quote_pattern = re.compile(r'(?:^|\s)(["“].+?["”])(?=$|[\s\.\,\;\:\!\?\)\]\}])')
     dialogue_list = []
@@ -841,6 +842,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
                 seg_span = (0, first_close + 1)
                 seg = text[seg_span[0]:seg_span[1]].strip()
                 if seg:
+                    quote_spans.append(span)
                     ordered.append((seg_span, seg))
                     covered.append(seg_span)
                 break  # only the first closing-only segment per paragraph
@@ -886,6 +888,10 @@ def extract_dialogue_from_docx(book_name, docx_path):
 
         # italics with spans
         for span, seg in extract_italic_spans(para):
+            # Skip italic span if it is fully contained within any quote span
+            is_, ie = span
+            if any(qs <= is_ and ie <= qe for (qs, qe) in quote_spans):
+                continue
             items.append((span, seg))
 
         # sort: start asc, then longer span first (desc)
