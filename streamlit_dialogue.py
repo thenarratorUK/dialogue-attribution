@@ -824,18 +824,18 @@ def extract_dialogue_from_docx(book_name, docx_path):
                 seg_span = (0, first_close + 1)
                 seg = text[seg_span[0]:seg_span[1]].strip()
                 if seg:
-                    ordered.append((span, seg))
+                    ordered.append((seg_span, seg))
                     covered.append(seg_span)
                 break  # only the first closing-only segment per paragraph
 
         # 2) Paired quotes: use existing regex; skip spans already covered
         for m in matches:
-            span = (m.start(1), m.end(1))
-            if not _is_covered(span):
+            seg_span = (m.start(1), m.end(1))
+            if not _is_covered(seg_span):
                 seg = m.group(1).strip()
                 if seg:
                     ordered.append((seg_span, seg))
-                    covered.append(span)
+                    covered.append(seg_span)
 
         # 3) Opening-only: last opening with no closing after -> opening..end
         last_open = -1
