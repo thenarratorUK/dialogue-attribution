@@ -1181,6 +1181,8 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
     lines.append('<div id="character-summary" style="border: 1px solid #ccc; padding: 10px; margin-bottom: 20px;">')
     lines.append('<h2 style="margin: 0 0 5px 0;">Character Summary</h2>')
     for sp in summary_order:
+        if normalize_speaker_name(sp) in ("error", "do not read"):
+            continue
         count = counts.get(sp, 0)
         percentage = round((count / total_lines) * 100) if total_lines > 0 else 0
         color_key = speaker_colors.get(normalize_speaker_name(sp), "none")
@@ -1198,7 +1200,7 @@ def generate_summary_html(quotes_list, speakers, speaker_colors):
 def generate_ranking_html(quotes_list, speaker_colors):
     counts = Counter(quote["speaker"] for quote in quotes_list)
     total_lines = sum(counts.values())
-    filtered = [(sp, count) for sp, count in counts.items() if sp.lower() != "unknown" and count > 1]
+    filtered = [(sp, count) for sp, count in counts.items() if sp.lower() not in ("unknown", "do not read", "error") and count > 1]
     filtered.sort(key=lambda x: x[1], reverse=True)
     lines = []
     lines.append('<div id="speaker-ranking" style="margin-top: 20px;">')
