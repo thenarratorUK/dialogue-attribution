@@ -1238,6 +1238,8 @@ def generate_first_lines_html(quotes_list, speakers):
     lines.append('<h2 style="margin: 0 0 5px 0;">First Substantial Lines</h2>')
     for sp in speakers:
         norm = normalize_speaker_name(sp)
+        if norm in ("do not read", "error"):
+            continue
         if norm in first_lines:
             line = first_lines[norm]
             lines.append(f'<p style="margin: 0; line-height: 1.2; padding: 8px 0;"><span class="highlight">{sp}</span>: <span style="font-style: italic;">{line}</span></p>')
