@@ -1672,11 +1672,21 @@ elif st.session_state.step == 2:
                 key="new_speaker_input",
                 placeholder="Type name and press Enter",
             )
-            submitted = st.form_submit_button("Submit")  # Enter inside box triggers this
-
-# Runs only once per finished answer (zero reruns while typing)
+            col_submit, col_skip, col_exit, col_undo = st.columns([2,1,1,1])
+            submitted = col_submit.form_submit_button("Submit")  # Enter inside box triggers this
+            skip_clicked = col_skip.form_submit_button("Skip")
+            exit_clicked = col_exit.form_submit_button("Exit")
+            undo_clicked = col_undo.form_submit_button("Undo (max 1)")
+        
+        # Runs only once per finished answer (zero reruns while typing)
         if submitted:
             process_unknown_input(new_name)
+        elif skip_clicked:
+            process_unknown_input("skip")
+        elif exit_clicked:
+            process_unknown_input("exit")
+        elif undo_clicked:
+            process_unknown_input("undo")
           
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
