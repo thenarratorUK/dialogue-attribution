@@ -804,6 +804,40 @@ def extract_italic_spans(paragraph):
 
     return spans
 def extract_dialogue_from_docx(book_name, docx_path):
+    # Helpers: italics-path check for quote enclosure (compare-only, no text mutation)
+    import re as _re_local
+    _SPACE_LIKE = _re_local.compile(r'[\u0020\u00A0\u2009\u200A\u200B\u202F\u205F\u3000]+')
+    _OPEN_QS  = {'“', '"'}
+    _CLOSE_QS = {'”', '"'}
+    def _prev_non_space(_s: str, _idx: int) -> str:
+        i = _idx - 1
+        while i >= 0 and _SPACE_LIKE.match(_s[i]):
+            i -= 1
+        return _s[i] if i >= 0 else ''
+    def _next_non_space(_s: str, _idx: int) -> str:
+        n = len(_s); i = _idx
+        while i < n and _SPACE_LIKE.match(_s[i]):
+            i += 1
+        return _s[i] if i < n else ''
+    def _is_enclosed_by_quotes(_para_text: str, _start: int, _end: int, _seg_text: str) -> bool:
+        # Pattern A: quotes outside the italic span: … “ [italic] ” …
+        _left  = _prev_non_space(_para_text, _start)
+        _right = _next_non_space(_para_text, _end)
+        if _left in _OPEN_QS and _right in _CLOSE_QS:
+            return True
+        # Pattern B: quotes inside the italic span text (rare)
+        st = _seg_text
+        if st and st[0] in _OPEN_QS:
+            j = 1
+            while j < len(st) and _SPACE_LIKE.match(st[j]):
+                j += 1
+            st = st[:1] + st[j:]
+        if st and st[-1] in _CLOSE_QS:
+            k = len(st) - 2
+            while k >= 0 and _SPACE_LIKE.match(st[k]):
+                k -= 1
+            st = st[:k+1] + st[-1:]
+        return (len(st) >= 2 and st[0] in _OPEN_QS and st[-1] in _CLOSE_QS)
     doc = docx.Document(docx_path)
     quote_pattern = re.compile(r'(?:^|\s)(["“].+?["”])(?=$|[\s\.\,\;\:\!\?\)\]\}])')
     dialogue_list = []
@@ -886,6 +920,10 @@ def extract_dialogue_from_docx(book_name, docx_path):
 
         # italics with spans
         for span, seg in extract_italic_spans(para):
+            # Skip italics if enclosed by quotes (italics-only rule)
+            is_, ie = span
+            if _is_enclosed_by_quotes(para.text, is_, ie, seg):
+                continue
             items.append((span, seg))
 
         # sort: start asc, then longer span first (desc)
