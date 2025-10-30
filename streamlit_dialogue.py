@@ -1672,13 +1672,19 @@ elif st.session_state.step == 2:
                 key="new_speaker_input",
                 placeholder="Type name and press Enter",
             )
-            col_submit, col_skip, col_exit, col_undo = st.columns([2,1,1,1])
-            submitted = col_submit.form_submit_button("Submit")  # Enter inside box triggers this
-            skip_clicked = col_skip.form_submit_button("Skip")
-            exit_clicked = col_exit.form_submit_button("Exit")
-            undo_clicked = col_undo.form_submit_button("Undo (max 1)")
         
-        # Runs only once per finished answer (zero reruns while typing)
+            # 5 columns: 1 wide spacer + 4 equal button columns
+            col_spacer, col_submit, col_skip, col_exit, col_undo = st.columns([4, 1, 1, 1, 1])
+        
+            with col_submit:
+                submitted = st.form_submit_button("Submit")
+            with col_skip:
+                skip_clicked = st.form_submit_button("Skip")
+            with col_exit:
+                exit_clicked = st.form_submit_button("Exit")
+            with col_undo:
+                undo_clicked = st.form_submit_button("Undo (max 1)")
+        
         if submitted:
             process_unknown_input(new_name)
         elif skip_clicked:
