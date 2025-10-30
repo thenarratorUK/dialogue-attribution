@@ -1714,7 +1714,7 @@ elif st.session_state.step == 3:
     
     if speakers_to_assign:
         st.write("Assign colors to the following speakers:")
-        color_options = [color.title() for color in COLOR_PALETTE.keys()]
+        color_options = [color.title() for color in COLOR_PALETTE.keys() if color.lower() != "do not read"]
         updated_colors = {}
         for sp in speakers_to_assign:
             norm = normalize_speaker_name(sp)
@@ -1781,7 +1781,7 @@ elif st.session_state.step == "edit_colors":
     # Load current colors (or default to empty)
     existing_colors = st.session_state.get("speaker_colors") or load_existing_colors() or {}
     updated_colors = existing_colors.copy()
-    color_options = [color.title() for color in COLOR_PALETTE.keys()]
+    color_options = [color.title() for color in COLOR_PALETTE.keys() if color.lower() != "do not read"]
     for sp in canonical_speakers:
         if sp.lower() in ("unknown", "do not read"):
             continue
