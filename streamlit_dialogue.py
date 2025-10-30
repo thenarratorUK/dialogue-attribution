@@ -1673,17 +1673,12 @@ elif st.session_state.step == 2:
                 placeholder="Type name and press Enter",
             )
         
-            # 5 columns: 1 wide spacer + 4 equal button columns
-            col_spacer, col_submit, col_skip, col_exit, col_undo = st.columns([4, 1, 1, 1, 1])
-        
-            with col_submit:
-                submitted = st.form_submit_button("Submit")
-            with col_skip:
-                skip_clicked = st.form_submit_button("Skip")
-            with col_exit:
-                exit_clicked = st.form_submit_button("Exit")
-            with col_undo:
-                undo_clicked = st.form_submit_button("Undo (max 1)")
+            # Evenly spaced horizontal buttons
+            cols = st.columns(4)
+            submitted     = cols[0].form_submit_button("Submit")
+            skip_clicked  = cols[1].form_submit_button("Skip")
+            exit_clicked  = cols[2].form_submit_button("Exit")
+            undo_clicked  = cols[3].form_submit_button("Undo (max 1)")
         
         if submitted:
             process_unknown_input(new_name)
