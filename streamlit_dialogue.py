@@ -455,7 +455,7 @@ COLOR_PALETTE = {
     "error": (0, 0, 0, 0, "")  # For "Error": transparent background, no text color override.
 }
 
-"do not read" == (0, 0, 0, 1, "rgb(243, 243, 243)")
+DO_NOT_READ_COLOR = (0, 0, 0, 1, "rgb(243, 243, 243)")
 
 # ==== STEP 0: Userkey Entry ====
 if "userkey" not in st.session_state:
@@ -1735,7 +1735,7 @@ elif st.session_state.step == 3:
             if sp.lower() == "unknown":
                 final_colors[norm] = "none"
             elif sp.lower() == "do not read":
-                final_colors[norm] = "do not read"
+                final_colors[norm] = DO_NOT_READ_COLOR
             else:
                 final_colors[norm] = existing_colors.get(norm, "none")
         st.session_state.speaker_colors = final_colors
