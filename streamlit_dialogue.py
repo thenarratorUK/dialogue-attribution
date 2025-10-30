@@ -452,10 +452,10 @@ COLOR_PALETTE = {
     "wine": (234, 184, 185, 1, "rgb(90, 40, 41)"),
     "lime": (230, 244, 182, 1, "rgb(81, 95, 33)"),
     "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)"),
+    "do not read" = (0, 0, 0, 1, "rgb(243, 243, 243)")
     "error": (0, 0, 0, 0, "")  # For "Error": transparent background, no text color override.
 }
 
-DO_NOT_READ_COLOR = (0, 0, 0, 1, "rgb(243, 243, 243)")
 
 # ==== STEP 0: Userkey Entry ====
 if "userkey" not in st.session_state:
@@ -1735,7 +1735,7 @@ elif st.session_state.step == 3:
             if sp.lower() == "unknown":
                 final_colors[norm] = "none"
             elif sp.lower() == "do not read":
-                final_colors[norm] = DO_NOT_READ_COLOR
+                final_colors[norm] = "do not read"
             else:
                 final_colors[norm] = existing_colors.get(norm, "none")
         st.session_state.speaker_colors = final_colors
