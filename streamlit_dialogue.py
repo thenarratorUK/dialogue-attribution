@@ -452,7 +452,7 @@ COLOR_PALETTE = {
     "wine": (234, 184, 185, 1, "rgb(90, 40, 41)"),
     "lime": (230, 244, 182, 1, "rgb(81, 95, 33)"),
     "none": (134, 8, 0, 1.0, "rgb(134, 8, 0)"),
-    "do not read": (0, 0, 0, 1, "rgb(243, 243, 243)"),
+    "do not read": (0, 0, 0, 1, "rgb(100, 100, 100)"),
     "error": (0, 0, 0, 0, "")  # For "Error": transparent background, no text color override.
 }
 
