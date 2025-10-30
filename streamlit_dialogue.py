@@ -455,6 +455,8 @@ COLOR_PALETTE = {
     "error": (0, 0, 0, 0, "")  # For "Error": transparent background, no text color override.
 }
 
+DO_NOT_READ_COLOR = (0, 0, 0, 1, "rgb(243, 243, 234)")
+
 # ==== STEP 0: Userkey Entry ====
 if "userkey" not in st.session_state:
     st.session_state.userkey = ""
@@ -1707,7 +1709,7 @@ elif st.session_state.step == 3:
     # Determine which speakers need a new assignment
     speakers_to_assign = [
         sp for sp in canonical_speakers 
-        if sp.lower() != "unknown" and (normalize_speaker_name(sp) not in existing_colors or existing_colors.get(normalize_speaker_name(sp), "none") == "none")
+        if sp.lower() not in ("unknown", "do not read") and (normalize_speaker_name(sp) not in existing_colors or existing_colors.get(normalize_speaker_name(sp), "none") == "none")
     ]
     
     if speakers_to_assign:
@@ -1732,6 +1734,8 @@ elif st.session_state.step == 3:
             norm = normalize_speaker_name(sp)
             if sp.lower() == "unknown":
                 final_colors[norm] = "none"
+            elif sp.lower() == "do not read":
+                final_colors[norm] = "do not read"
             else:
                 final_colors[norm] = existing_colors.get(norm, "none")
         st.session_state.speaker_colors = final_colors
@@ -1779,7 +1783,7 @@ elif st.session_state.step == "edit_colors":
     updated_colors = existing_colors.copy()
     color_options = [color.title() for color in COLOR_PALETTE.keys()]
     for sp in canonical_speakers:
-        if sp.lower() == "unknown":
+        if sp.lower() in ("unknown", "do not read"):
             continue
         norm = normalize_speaker_name(sp)
         default_color = existing_colors.get(norm, "none")
