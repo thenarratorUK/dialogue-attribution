@@ -1240,7 +1240,7 @@ def generate_first_lines_html(quotes_list, speakers):
     lines.append('<h2 style="margin: 0 0 5px 0;">First Substantial Lines</h2>')
     for sp in speakers:
         norm = normalize_speaker_name(sp)
-        if norm in ("do not read", "error"):
+        if norm in ("do not read", "error", "unknown"):
             continue
         if norm in first_lines:
             line = first_lines[norm]
