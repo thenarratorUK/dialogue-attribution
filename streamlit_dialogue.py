@@ -74,28 +74,31 @@ def neutralize_markdown_in_html(html_s: str) -> str:
 import streamlit.components.v1 as components
 
 
-
 def _inject_mobile_grid_css():
-    # Stronger overrides: enforce row direction and wrapping on the horizontal block
-    st.markdown(\"\"\"
+    # Strong, scoped layout overrides for Step-2 "Frequent speakers"
+    st.markdown("""
     <style>
-      /* Ensure the columns container stays in row mode and wraps on narrow screens */
-      .frequent-grid [data-testid="stHorizontalBlock"] {
+      /* 1) Ensure the parent horizontal block uses a row layout and can wrap */
+      .frequent-grid [data-testid="stHorizontalBlock"],
+      .frequent-grid [class*="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
         flex-wrap: wrap !important;
         gap: 0.5rem !important;
       }
-      /* Allow the inner columns to shrink properly */
-      .frequent-grid [data-testid="column"] {
+
+      /* 2) Allow the child columns to shrink and take fractional widths */
+      .frequent-grid [data-testid="column"],
+      .frequent-grid [class*="Column"] {
         padding-left: 0.4rem !important;
         padding-right: 0.4rem !important;
         min-width: 0 !important;
       }
 
-      /* Phone: <=480px -> 2-up (50% each) */
+      /* 3) Phone: <=480px -> 2-up (50% each) */
       @media (max-width: 480px) {
-        .frequent-grid [data-testid="column"] {
+        .frequent-grid [data-testid="column"],
+        .frequent-grid [class*="Column"] {
           flex: 0 0 50% !important;
           max-width: 50% !important;
         }
@@ -107,9 +110,10 @@ def _inject_mobile_grid_css():
         }
       }
 
-      /* Small phones / phablets: 481–700px -> 3-up (33.333% each) */
+      /* 4) Small phones/phablets: 481–700px -> 3-up (33.333% each) */
       @media (min-width: 481px) and (max-width: 700px) {
-        .frequent-grid [data-testid="column"] {
+        .frequent-grid [data-testid="column"],
+        .frequent-grid [class*="Column"] {
           flex: 0 0 33.333% !important;
           max-width: 33.333% !important;
         }
@@ -120,7 +124,7 @@ def _inject_mobile_grid_css():
         }
       }
 
-      /* Wider screens keep your existing 4-up; only adjust button compactness */
+      /* 5) Wider screens: keep 4-up; mild button compaction only */
       @media (min-width: 701px) {
         .frequent-grid .stButton > button {
           font-size: 0.95rem;
@@ -129,8 +133,7 @@ def _inject_mobile_grid_css():
         }
       }
     </style>
-    \"\"\", unsafe_allow_html=True)
-
+    """, unsafe_allow_html=True)
 
 def build_d_paragraphs_html(docx_path):
     import docx
