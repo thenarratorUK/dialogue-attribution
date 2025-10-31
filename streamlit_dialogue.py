@@ -73,6 +73,56 @@ def neutralize_markdown_in_html(html_s: str) -> str:
 # Import components for HTML embedding.
 import streamlit.components.v1 as components
 
+
+def _inject_mobile_grid_css():
+    # Scoped overrides for the Step-2 frequent speakers grid only.
+    st.markdown("""
+    <style>
+      /* Reduce column side padding a bit so multiple columns fit on narrow screens */
+      .frequent-grid [data-testid="column"] {
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
+        min-width: 0 !important;
+      }
+
+      /* Phone: <=480px -> 2-up (50% each) */
+      @media (max-width: 480px) {
+        .frequent-grid [data-testid="column"] {
+          flex: 1 0 50% !important;
+          max-width: 50% !important;
+        }
+        .frequent-grid .stButton > button {
+          font-size: 0.90rem;
+          padding: 0.25rem 0.5rem;
+          line-height: 1.15;
+          min-height: 2rem;
+        }
+      }
+
+      /* Small phones / phablets: 481–700px -> 3-up (33.333% each) */
+      @media (min-width: 481px) and (max-width: 700px) {
+        .frequent-grid [data-testid="column"] {
+          flex: 1 0 33.333% !important;
+          max-width: 33.333% !important;
+        }
+        .frequent-grid .stButton > button {
+          font-size: 0.95rem;
+          padding: 0.3rem 0.65rem;
+          line-height: 1.2;
+        }
+      }
+
+      /* Wider screens keep your existing 4-up; mildly tighten buttons for consistency */
+      @media (min-width: 701px) {
+        .frequent-grid .stButton > button {
+          font-size: 0.95rem;
+          padding: 0.3rem 0.65rem;
+          line-height: 1.2;
+        }
+      }
+    </style>
+    """, unsafe_allow_html=True)
+
 def build_d_paragraphs_html(docx_path):
     import docx
     import html
@@ -1663,6 +1713,8 @@ elif st.session_state.step == 2:
             if "flagged_names" in st.session_state and st.session_state.flagged_names:
                 flagged_sorted = sorted(st.session_state.flagged_names)
                 flagged_sorted = [n for n in flagged_sorted if n.lower() != "unknown"]
+                _inject_mobile_grid_css()
+                st.markdown('<div class="frequent-grid">', unsafe_allow_html=True)
                 st.caption("Frequent speakers:")
                 cols = st.columns(4)
                 cmap = st.session_state.get("canonical_map") or {}
@@ -1695,6 +1747,7 @@ elif st.session_state.step == 2:
         elif undo_clicked:
             process_unknown_input("undo")
           
+        st.markdown('</div>', unsafe_allow_html=True)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
 # ========= STEP 3: Speaker Color Assignment =========
