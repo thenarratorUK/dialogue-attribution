@@ -1663,12 +1663,12 @@ elif st.session_state.step == 2:
             if "flagged_names" in st.session_state and st.session_state.flagged_names:
                 flagged_sorted = sorted(st.session_state.flagged_names)
                 flagged_sorted = [n for n in flagged_sorted if n.lower() != "unknown"]
-                st.caption("Frequent speakers:")
-                cols = st.columns(4)
-                cmap = st.session_state.get("canonical_map") or {}
+                st.caption("Frequent speakers:")                cmap = st.session_state.get("canonical_map") or {}
+
+                flex = st.container(horizontal=True)
                 for i, norm in enumerate(flagged_sorted):
                     display_name = cmap.get(norm, norm.title())
-                    if cols[i % 4].button(display_name, key=f"flagged_{norm}"):
+                    if flex.button(display_name, key=f"flagged_{norm}"):
                         process_unknown_input(display_name)
         except Exception as _e:
             pass
@@ -1680,12 +1680,11 @@ elif st.session_state.step == 2:
             )
         
             # Evenly spaced horizontal buttons
-            cols = st.columns(4)
-            submitted     = cols[0].form_submit_button("Submit")
-            skip_clicked  = cols[1].form_submit_button("Skip")
-            exit_clicked  = cols[2].form_submit_button("Exit")
-            undo_clicked  = cols[3].form_submit_button("Undo (max 1)")
-        
+            flex = st.container(horizontal=True)
+            submitted    = flex.form_submit_button("Submit")
+            skip_clicked = flex.form_submit_button("Skip")
+            exit_clicked = flex.form_submit_button("Exit")
+            undo_clicked = flex.form_submit_button("Undo (max 1)")
         if submitted:
             process_unknown_input(new_name)
         elif skip_clicked:
