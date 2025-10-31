@@ -1664,13 +1664,12 @@ elif st.session_state.step == 2:
                 flagged_sorted = sorted(st.session_state.flagged_names)
                 flagged_sorted = [n for n in flagged_sorted if n.lower() != "unknown"]
                 st.caption("Frequent speakers:")
-
                 with st.container(horizontal=True):
-                cmap = st.session_state.get("canonical_map") or {}
-                for i, norm in enumerate(flagged_sorted):
-                    display_name = cmap.get(norm, norm.title())
-                    if st.button(display_name, key=f"flagged_{norm}"):
-                        process_unknown_input(display_name)
+                    cmap = st.session_state.get("canonical_map") or {}
+                    for i, norm in enumerate(flagged_sorted):
+                        display_name = cmap.get(norm, norm.title())
+                        if st.button(display_name, key=f"flagged_{norm}"):
+                            process_unknown_input(display_name)
         except Exception as _e:
             pass
         with st.form("unknown_form", clear_on_submit=True):
@@ -1682,10 +1681,10 @@ elif st.session_state.step == 2:
         
             # Evenly spaced horizontal buttons
             with st.container(horizontal=True):
-            submitted    = st.form_submit_button("Submit")
-            skip_clicked = st.form_submit_button("Skip")
-            exit_clicked = st.form_submit_button("Exit")
-            undo_clicked = st.form_submit_button("Undo (max 1)")
+                submitted    = st.form_submit_button("Submit")
+                skip_clicked = st.form_submit_button("Skip")
+                exit_clicked = st.form_submit_button("Exit")
+                undo_clicked = st.form_submit_button("Undo (max 1)")
         if submitted:
             process_unknown_input(new_name)
         elif skip_clicked:
