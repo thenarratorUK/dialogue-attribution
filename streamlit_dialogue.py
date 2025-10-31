@@ -73,68 +73,6 @@ def neutralize_markdown_in_html(html_s: str) -> str:
 # Import components for HTML embedding.
 import streamlit.components.v1 as components
 
-
-def _inject_mobile_grid_css():
-    # Strong, scoped layout overrides for Step-2 "Frequent speakers"
-    st.markdown("""
-    <style>
-      /* 1) Ensure the parent horizontal block uses a row layout and can wrap */
-      .frequent-grid [data-testid="stHorizontalBlock"],
-      .frequent-grid [class*="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: wrap !important;
-        gap: 0.5rem !important;
-      }
-
-      /* 2) Allow the child columns to shrink and take fractional widths */
-      .frequent-grid [data-testid="column"],
-      .frequent-grid [class*="Column"] {
-        padding-left: 0.4rem !important;
-        padding-right: 0.4rem !important;
-        min-width: 0 !important;
-      }
-
-      /* 3) Phone: <=480px -> 2-up (50% each) */
-      @media (max-width: 480px) {
-        .frequent-grid [data-testid="column"],
-        .frequent-grid [class*="Column"] {
-          flex: 0 0 50% !important;
-          max-width: 50% !important;
-        }
-        .frequent-grid .stButton > button {
-          font-size: 0.90rem;
-          padding: 0.25rem 0.5rem;
-          line-height: 1.15;
-          min-height: 2rem;
-        }
-      }
-
-      /* 4) Small phones/phablets: 481–700px -> 3-up (33.333% each) */
-      @media (min-width: 481px) and (max-width: 700px) {
-        .frequent-grid [data-testid="column"],
-        .frequent-grid [class*="Column"] {
-          flex: 0 0 33.333% !important;
-          max-width: 33.333% !important;
-        }
-        .frequent-grid .stButton > button {
-          font-size: 0.95rem;
-          padding: 0.3rem 0.65rem;
-          line-height: 1.2;
-        }
-      }
-
-      /* 5) Wider screens: keep 4-up; mild button compaction only */
-      @media (min-width: 701px) {
-        .frequent-grid .stButton > button {
-          font-size: 0.95rem;
-          padding: 0.3rem 0.65rem;
-          line-height: 1.2;
-        }
-      }
-    </style>
-    """, unsafe_allow_html=True)
-
 def build_d_paragraphs_html(docx_path):
     import docx
     import html
@@ -1725,8 +1663,6 @@ elif st.session_state.step == 2:
             if "flagged_names" in st.session_state and st.session_state.flagged_names:
                 flagged_sorted = sorted(st.session_state.flagged_names)
                 flagged_sorted = [n for n in flagged_sorted if n.lower() != "unknown"]
-                _inject_mobile_grid_css()
-                st.markdown('<div class="frequent-grid">', unsafe_allow_html=True)
                 st.caption("Frequent speakers:")
                 cols = st.columns(4)
                 cmap = st.session_state.get("canonical_map") or {}
@@ -1759,7 +1695,6 @@ elif st.session_state.step == 2:
         elif undo_clicked:
             process_unknown_input("undo")
           
-        st.markdown('</div>', unsafe_allow_html=True)
         st.text_area("Console Log", "\n".join(st.session_state.console_log), height=150, label_visibility="collapsed")
 
 # ========= STEP 3: Speaker Color Assignment =========
