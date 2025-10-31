@@ -74,11 +74,19 @@ def neutralize_markdown_in_html(html_s: str) -> str:
 import streamlit.components.v1 as components
 
 
+
 def _inject_mobile_grid_css():
-    # Scoped overrides for the Step-2 frequent speakers grid only.
-    st.markdown("""
+    # Stronger overrides: enforce row direction and wrapping on the horizontal block
+    st.markdown(\"\"\"
     <style>
-      /* Reduce column side padding a bit so multiple columns fit on narrow screens */
+      /* Ensure the columns container stays in row mode and wraps on narrow screens */
+      .frequent-grid [data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: wrap !important;
+        gap: 0.5rem !important;
+      }
+      /* Allow the inner columns to shrink properly */
       .frequent-grid [data-testid="column"] {
         padding-left: 0.4rem !important;
         padding-right: 0.4rem !important;
@@ -88,7 +96,7 @@ def _inject_mobile_grid_css():
       /* Phone: <=480px -> 2-up (50% each) */
       @media (max-width: 480px) {
         .frequent-grid [data-testid="column"] {
-          flex: 1 0 50% !important;
+          flex: 0 0 50% !important;
           max-width: 50% !important;
         }
         .frequent-grid .stButton > button {
@@ -102,7 +110,7 @@ def _inject_mobile_grid_css():
       /* Small phones / phablets: 481–700px -> 3-up (33.333% each) */
       @media (min-width: 481px) and (max-width: 700px) {
         .frequent-grid [data-testid="column"] {
-          flex: 1 0 33.333% !important;
+          flex: 0 0 33.333% !important;
           max-width: 33.333% !important;
         }
         .frequent-grid .stButton > button {
@@ -112,7 +120,7 @@ def _inject_mobile_grid_css():
         }
       }
 
-      /* Wider screens keep your existing 4-up; mildly tighten buttons for consistency */
+      /* Wider screens keep your existing 4-up; only adjust button compactness */
       @media (min-width: 701px) {
         .frequent-grid .stButton > button {
           font-size: 0.95rem;
@@ -121,7 +129,8 @@ def _inject_mobile_grid_css():
         }
       }
     </style>
-    """, unsafe_allow_html=True)
+    \"\"\", unsafe_allow_html=True)
+
 
 def build_d_paragraphs_html(docx_path):
     import docx
