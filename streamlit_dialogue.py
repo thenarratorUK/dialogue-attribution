@@ -920,24 +920,18 @@ def extract_dialogue_from_docx(book_name, docx_path):
         for span, seg in ordered:
             items.append((span, seg))
 
-        # italics with spans
-            quote_spans = [span for span, _ in ordered]
+        quote_spans = [span for span, _ in ordered]
 
-    def _inside_any(inner_span, outer_spans):
-        s, e = inner_span
-        return any(os <= s and e <= oe for (os, oe) in outer_spans)
+        def _inside_any(inner_span, outer_spans):
+            s, e = inner_span
+            return any(os <= s and e <= oe for (os, oe) in outer_spans)
 
-for span, seg in extract_italic_spans(para):
-    # Skip italics that lie anywhere inside any quoted span in this paragraph
-    if _inside_any(span, quote_spans):
-        continue
-    items.append((span, seg))
-            is_, ie = span
-            if _is_enclosed_by_quotes(para.text, is_, ie, seg):
+        for span, seg in extract_italic_spans(para):
+            # Skip italics that lie anywhere inside any quoted span in this paragraph
+            if _inside_any(span, quote_spans):
                 continue
             items.append((span, seg))
 
-        # sort: start asc, then longer span first (desc)
         items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
