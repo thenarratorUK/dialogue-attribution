@@ -1597,6 +1597,9 @@ elif st.session_state.step == 2:
         
         def process_unknown_input(new_speaker: str):
             new_speaker = new_speaker.strip()
+            if not new_speaker:
+                st.session_state.console_log.insert(0, "Empty input ignored. Enter a name, or use 'skip' / 'exit'.")
+                return
             if new_speaker.lower() == "exit":
                 st.session_state.console_log.insert(0, "Exiting unknown speaker processing.")
                 st.session_state.step = 3
@@ -1606,7 +1609,7 @@ elif st.session_state.step == 2:
             elif new_speaker.lower() == "undo":
                 if "last_update" in st.session_state:
                     last_index = st.session_state.last_update[0]
-                    pattern = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]+)(:.*)$")
+                    pattern = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]*)(:.*)$")
                     m = pattern.match(st.session_state.quotes_lines[last_index])
                     if m:
                         prefix_u, _, remainder_u = m.groups()
