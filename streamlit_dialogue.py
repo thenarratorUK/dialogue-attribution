@@ -992,7 +992,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
             while e > s and src_text[e-1] in QUOTES:
                 e -= 1
             return (s, e)
-for im in re.finditer(r"<i>(.*?)</i>", text, flags=re.DOTALL):
+        for im in re.finditer(r"<i>(.*?)</i>", text, flags=re.DOTALL):
             i_span = (im.start(1), im.end(1))  # content-only span (excludes tags)
             i_text = im.group(1)
             t_span = _trim_quotes_for_span(i_span, text)
