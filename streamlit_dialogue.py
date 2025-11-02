@@ -927,11 +927,14 @@ def extract_dialogue_from_docx(book_name, docx_path):
             return any(os <= s and e <= oe for (os, oe) in outer_spans)
 
         for span, seg in extract_italic_spans(para):
-            # Skip italics that lie anywhere inside any quoted span in this paragraph
-            if _inside_any(span, quote_spans):
+        # Italics: emit only those whose *content* span lies outside any quoted span
+        # Use content-only indices for containment (im.start(1), im.end(1)) so fully-italicised quotes don't duplicate
+        for im in re.finditer(r"<i>(.*?)</i>", text, flags=re.DOTALL):
+            i_span = (im.start(1), im.end(1))
+            i_text = im.group(1)
+            if _inside_any(i_span, quote_spans):
                 continue
-            items.append((span, seg))
-
+            items.append((i_span, i_text))
         items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
