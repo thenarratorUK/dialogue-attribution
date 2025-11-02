@@ -929,14 +929,20 @@ def extract_dialogue_from_docx(book_name, docx_path):
 
         # italics with spans
         for span, seg in extract_italic_spans(para):
-        # Skip italics if enclosed by quotes (italics-only rule) or directly wrapped by quotes
-            i_start, i_end = span
-            if _is_enclosed_by_quotes(para.text, i_start, i_end, seg) or _has_quotes_just_outside(span, para.text):
+            # Skip italics if directly wrapped by quotes (reintroduced)
+            if _has_quotes_just_outside(span, para.text):
                 continue
-            items.append((span, seg))
+            # … or if the italics content is enclosed by quotes per your original rule
+            i_start, i_end = span
+            if _is_enclosed_by_quotes(para.text, i_start, i_end, seg):
+                continue
+            # Safety: avoid emitting the same italic span twice within this paragraph
+            if any((s0 == i_start and s1 == i_end) for (s0, s1) in [sp for sp, _ in items]):
+                continue
+        items.append((span, seg))
 
         # sort: start asc, then longer span first (desc)
-            items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
+        items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
             dialogue_list.append(f"{line_number}. Unknown: {seg}")
