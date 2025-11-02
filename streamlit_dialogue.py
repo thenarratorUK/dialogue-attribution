@@ -930,8 +930,8 @@ def extract_dialogue_from_docx(book_name, docx_path):
         # italics with spans
         for span, seg in extract_italic_spans(para):
         # Skip italics if enclosed by quotes (italics-only rule) or directly wrapped by quotes
-            is_, ie = span
-        if _is_enclosed_by_quotes(para.text, is_, ie, seg) or _has_quotes_just_outside(span, para.text):
+        i_start, i_end = span
+        if _is_enclosed_by_quotes(para.text, i_start, i_end, seg) or _has_quotes_just_outside(span, para.text):
             continue
             items.append((span, seg))
 
