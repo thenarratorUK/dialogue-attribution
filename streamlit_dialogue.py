@@ -919,14 +919,19 @@ def extract_dialogue_from_docx(book_name, docx_path):
         # quotes collected earlier as (span, text)
         for span, seg in ordered:
             items.append((span, seg))
-
-        # italics with spans
-            # Skip italics if enclosed by quotes (italics-only rule)
-            is_, ie = span
-            if _is_enclosed_by_quotes(para.text, is_, ie, seg):
+        
+        # italics: use content-only spans to avoid duplicating fully italicised quotes
+        quote_spans = [span for span, _ in ordered]
+        def _inside_any(inner_span, outer_spans):
+            s, e = inner_span
+            return any(os <= s and e <= oe for (os, oe) in outer_spans)
+        
+        for im in re.finditer(r"<i>(.*?)</i>", text, flags=re.DOTALL):
+            i_span = (im.start(1), im.end(1))
+            i_text = im.group(1)
+            if _inside_any(i_span, quote_spans):
                 continue
-            items.append((span, seg))
-
+            items.append((i_span, i_text))
         # sort: start asc, then longer span first (desc)
         items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
