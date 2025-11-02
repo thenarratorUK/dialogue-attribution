@@ -920,28 +920,18 @@ def extract_dialogue_from_docx(book_name, docx_path):
         for span, seg in ordered:
             items.append((span, seg))
 
-        # Additional guard: quotes immediately *outside* the italic span
-        def _has_quotes_just_outside(_span, _para_text):
-            s, e = _span
-            left  = _para_text[s-1] if s > 0 else ''
-            right = _para_text[e] if e < len(_para_text) else ''
-            return (left in _OPEN_QS) and (right in _CLOSE_QS)
+        quote_spans = [span for span, _ in ordered]
 
-        # italics with spans
+        def _inside_any(inner_span, outer_spans):
+            s, e = inner_span
+            return any(os <= s and e <= oe for (os, oe) in outer_spans)
+
         for span, seg in extract_italic_spans(para):
-            # Skip italics if directly wrapped by quotes (reintroduced)
-            if _has_quotes_just_outside(span, para.text):
+            # Skip italics that lie anywhere inside any quoted span in this paragraph
+            if _inside_any(span, quote_spans):
                 continue
-            # … or if the italics content is enclosed by quotes per your original rule
-            i_start, i_end = span
-            if _is_enclosed_by_quotes(para.text, i_start, i_end, seg):
-                continue
-            # Safety: avoid emitting the same italic span twice within this paragraph
-            if any((s0 == i_start and s1 == i_end) for (s0, s1) in [sp for sp, _ in items]):
-                continue
-        items.append((span, seg))
+            items.append((span, seg))
 
-        # sort: start asc, then longer span first (desc)
         items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
