@@ -988,7 +988,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
             if _inside_any(i_span, quote_spans):
                 continue
             items.append((i_span, i_text))
-items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
+        items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
             dialogue_list.append(f"{line_number}. Unknown: {seg}")
