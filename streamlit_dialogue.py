@@ -1,5 +1,54 @@
 import streamlit as st
 import re
+
+def extract_italic_spans(para):
+    """Return list of ((start, end), text) for italic content in this paragraph,
+    with spans measured against para.text.
+    We consider a run italic if any of run.italic, run.font.italic is True,
+    or the character style name contains 'Italic'/'Emphasis' (best-effort)."""
+    runs = getattr(para, 'runs', [])
+    spans = []
+    pos = 0
+    # Build a mirror of para.text by concatenating run.text, tracking offsets
+    for run in runs:
+        t = run.text or ''
+        length = len(t)
+        italic_flag = False
+        try:
+            if run.italic is True:
+                italic_flag = True
+        except Exception:
+            pass
+        try:
+            if getattr(run.font, 'italic', None) is True:
+                italic_flag = True
+        except Exception:
+            pass
+        try:
+            sty = getattr(run, 'style', None)
+            if sty is not None:
+                name = getattr(sty, 'name', '') or ''
+                if 'italic' in name.lower() or 'emphasis' in name.lower():
+                    italic_flag = True
+        except Exception:
+            pass
+        if italic_flag and length > 0:
+            spans.append(((pos, pos + length), t))
+        pos += length
+    # Merge adjacent/contiguous italic runs
+    merged = []
+    for span, seg in spans:
+        if not merged:
+            merged.append([list(span), seg])
+        else:
+            last_span, last_text = merged[-1]
+            if span[0] == last_span[1]:
+                last_span[1] = span[1]
+                merged[-1][1] = last_text + seg
+            else:
+                merged.append([list(span), seg])
+    return [((s[0], s[1]), txt) for s, txt in merged]
+
 import os
 import json
 import tempfile
@@ -926,14 +975,20 @@ def extract_dialogue_from_docx(book_name, docx_path):
             s, e = inner_span
             return any(os <= s and e <= oe for (os, oe) in outer_spans)
         
-        for im in re.finditer(r"<i>(.*?)</i>", text, flags=re.DOTALL):
-            i_span = (im.start(1), im.end(1))
-            i_text = im.group(1)
+        for i_span, i_text in extract_italic_spans(para):
             if _inside_any(i_span, quote_spans):
                 continue
             items.append((i_span, i_text))
         # sort: start asc, then longer span first (desc)
-        items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
+        
+        # Emit italics only if their *content* span lies outside all quote spans
+        for im in re.finditer(r"<i>(.*?)</i>", text, flags=re.DOTALL):
+            i_span = (im.start(1), im.end(1))  # content-only span (excludes tags)
+            i_text = im.group(1)
+            if _inside_any(i_span, quote_spans):
+                continue
+            items.append((i_span, i_text))
+items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
             dialogue_list.append(f"{line_number}. Unknown: {seg}")
