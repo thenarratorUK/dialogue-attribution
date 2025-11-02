@@ -982,13 +982,25 @@ def extract_dialogue_from_docx(book_name, docx_path):
         # sort: start asc, then longer span first (desc)
         
         # Emit italics only if their *content* span lies outside all quote spans
-        for im in re.finditer(r"<i>(.*?)</i>", text, flags=re.DOTALL):
+        
+        # Helper: trim leading/trailing quote characters from a span for containment checks
+        def _trim_quotes_for_span(span, src_text):
+            s, e = span
+            QUOTES = {'“','”','"','\'','‘','’'}
+            while s < e and src_text[s] in QUOTES:
+                s += 1
+            while e > s and src_text[e-1] in QUOTES:
+                e -= 1
+            return (s, e)
+for im in re.finditer(r"<i>(.*?)</i>", text, flags=re.DOTALL):
             i_span = (im.start(1), im.end(1))  # content-only span (excludes tags)
             i_text = im.group(1)
-            if _inside_any(i_span, quote_spans):
+            t_span = _trim_quotes_for_span(i_span, text)
+            # Skip italics if either raw span or trimmed span lies inside any quote
+            if _inside_any(i_span, quote_spans) or _inside_any(t_span, quote_spans):
                 continue
             items.append((i_span, i_text))
-        items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
+items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
             dialogue_list.append(f"{line_number}. Unknown: {seg}")
