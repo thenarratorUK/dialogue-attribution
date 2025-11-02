@@ -933,10 +933,10 @@ def extract_dialogue_from_docx(book_name, docx_path):
             i_start, i_end = span
             if _is_enclosed_by_quotes(para.text, i_start, i_end, seg) or _has_quotes_just_outside(span, para.text):
                 continue
-        items.append((span, seg))
+            items.append((span, seg))
 
         # sort: start asc, then longer span first (desc)
-        items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
+            items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
             dialogue_list.append(f"{line_number}. Unknown: {seg}")
