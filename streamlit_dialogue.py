@@ -1952,3 +1952,13 @@ elif st.session_state.step == 4:
             if k in st.session_state:
                 del st.session_state[k]
         st.rerun()
+def _has_quotes_inside(span, src_text):
+    """Return True if the italicised region (including tags) begins or ends with quote marks."""
+    s, e = span
+    if s < 0: s = 0
+    if e > len(src_text): e = len(src_text)
+    segment = src_text[s:e].strip()
+    return (segment.startswith('<i>"') or segment.startswith('<i>“') or
+            segment.startswith('<i>\'') or segment.startswith('<i>‘') or
+            segment.endswith('"</i>') or segment.endswith('”</i>') or
+            segment.endswith('\'</i>') or segment.endswith('’</i>'))
