@@ -117,37 +117,6 @@ def _attach_quotes_heuristic(rows_for_para: List[Dict[str,str]]) -> List[Dict[st
         i += 1
     return rows_for_para
 
-def fix_edge_quotes_across_rows(rows):
-    """
-    After all paragraphs are flattened into `rows` (list of dicts with Speaker, Line),
-    move stray leading/trailing quotes across row boundaries.
-    Skips 'Do Not Read' rows.
-    """
-    i = 0
-    while i < len(rows):
-        spk = rows[i]["Speaker"]
-        line = rows[i]["Line"]
-
-        # Move leading quotes to the previous row's end:  ^("{1,})\s+(.*)
-        m = re.match(r'^("+"\s+)(.*)$', line)
-        if m and i > 0 and spk != "Do Not Read":
-            lead = m.group(1).strip()   # one or more quotes
-            rest = m.group(2)
-            rows[i-1]["Line"] = (rows[i-1]["Line"].rstrip() + " " + lead).rstrip()
-            rows[i]["Line"] = rest.lstrip()
-            line = rows[i]["Line"]  # refresh
-
-        # Move trailing quotes to the next row's start:  (.*\S)\s+("{1,})$
-        m = re.match(r'^(.*\S)\s+("+"$)', rows[i]["Line"])
-        if m and i + 1 < len(rows) and spk != "Do Not Read":
-            trail = m.group(2).strip()
-            left = m.group(1)
-            rows[i]["Line"] = left.rstrip()
-            rows[i+1]["Line"] = (trail + " " + rows[i+1]["Line"]).lstrip()
-
-        i += 1
-    return rows
-
 def _html_to_dialogue_rows(final_html: str, quotes_map: Dict[str,str]) -> List[Dict[str,str]]:
     """
     Parse the already-built Step-4 HTML to rows of {Speaker, Line}.
@@ -232,7 +201,6 @@ def _html_to_dialogue_rows(final_html: str, quotes_map: Dict[str,str]) -> List[D
 
     # final squeeze
     import re as _re
-    all_rows = fix_edge_quotes_across_rows(all_rows)
     for r in all_rows:
         r["Line"] = _re.sub(r"\s+", " ", r["Line"]).strip()
     return all_rows
@@ -246,6 +214,24 @@ def build_dialogue_csv_from_final_html(final_html: str, quotes_lines: List[str])
     rows = _html_to_dialogue_rows(final_html, qmap)
     df = pd.DataFrame(rows, columns=["Speaker", "Line"])
     return df.to_csv(index=False).encode("utf-8")
+    
+def build_csv_from_current_output(html_bytes, quotes_lines):
+    """Return CSV bytes using the same v4+final-pass parser you already validated."""
+    from pathlib import Path
+    import tempfile
+
+    from winter_scorched_parser import parse_document, read_quotes_mapping  # import your proven parser module
+
+    with tempfile.TemporaryDirectory() as tmp:
+        html_path = Path(tmp) / "tmp.html"
+        quotes_path = Path(tmp) / "tmp_quotes.txt"
+
+        html_path.write_bytes(html_bytes)
+        quotes_path.write_text("".join(quotes_lines), encoding="utf-8")
+
+        quotes_map, _ = read_quotes_mapping(quotes_path)
+        df = parse_document(html_path, quotes_map)
+        return df.to_csv(index=False).encode("utf-8")    
     
 def trim_paragraph_cache_before_previous(previous_html: str):
     try:
@@ -2110,13 +2096,8 @@ elif st.session_state.step == 4:
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
-    # Build CSV from the produced HTML + finalised quotes
-    html_str = html_bytes.decode("utf-8", errors="ignore")
-    quotes_txt = "".join(st.session_state.quotes_lines)
-    quotes_map, _ = read_quotes_mapping_from_text(quotes_txt)   # or your existing read_quotes_mapping()
-    df = parse_document_from_html_string(html_str, quotes_map)  # or your existing parse_document() that accepts a string
-    csv_bytes = df.to_csv(index=False).encode("utf-8")
-    st.download_button("Download Dialogue CSV", csv_bytes,
+    csv_bytes = build_csv_from_current_output(html_bytes, st.session_state.quotes_lines)
+    st.download_button("Download CSV File", csv_bytes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}.csv", mime="text/csv")
     if os.path.exists(get_unmatched_quotes_filename()):
         with open(get_unmatched_quotes_filename(), "rb") as f:
