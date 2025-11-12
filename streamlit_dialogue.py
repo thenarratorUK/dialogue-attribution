@@ -6,6 +6,8 @@ import tempfile
 import mammoth
 import docx
 import base64
+import io
+import pandas as pd
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from bs4 import BeautifulSoup, NavigableString
