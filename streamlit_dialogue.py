@@ -18,7 +18,7 @@ import html
 
 QUOTE_CHARS = '"“”'
 
-MOJIBAKE_FIXES = {
+_MOJIBAKE_FIXES = {
     # common utf8->latin1
     "â€˜": "‘", "â€™": "’", "â€œ": "“", "â€": "”",
     "â€“": "–", "â€”": "—", "â€¦": "…",
