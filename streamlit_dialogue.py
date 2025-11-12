@@ -18,13 +18,14 @@ import html
 
 QUOTE_CHARS = '"“”'
 
-_MOJIBAKE_FIXES = {
-    # utf8->latin1
-    "â€˜": "‘", "â€™": "’", "â€œ": "“", "â€": "”",
+MOJIBAKE_FIXES = {
+    # common utf8->latin1
+    "â€˜": "‘", "â€™": "’", "â€œ": "“", "â€": "”,
     "â€“": "–", "â€”": "—", "â€¦": "…",
-    # mac/common
+    # mac/other weird
     "‚Äò": "‘", "‚Äô": "’", "‚Äú": "“", "‚Äù": "”",
     "‚Äî": "—", "‚Äì": "–", "‚Ä¶": "…",
+    "Ä¶": "…",  # <— add this line
     # stray nbsp-ish
     "Â": "",
 }
