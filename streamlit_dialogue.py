@@ -6,23 +6,21 @@ import tempfile
 import mammoth
 import docx
 import base64
-import csv
-import io
-import pandas as pd
-from typing import List, Dict
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
 import html
 
+# ===== Dialogue CSV Builder (v4 + final quote-fix) =====
+
 QUOTE_CHARS = '"“”'
 
 _MOJIBAKE_FIXES = {
-    # common utf8->latin1
+    # utf8->latin1
     "â€˜": "‘", "â€™": "’", "â€œ": "“", "â€": "”",
     "â€“": "–", "â€”": "—", "â€¦": "…",
-    # mac/other weird
+    # mac/common
     "‚Äò": "‘", "‚Äô": "’", "‚Äú": "“", "‚Äù": "”",
     "‚Äî": "—", "‚Äì": "–", "‚Ä¶": "…",
     # stray nbsp-ish
@@ -35,65 +33,49 @@ def _fix_mojibake(s: str) -> str:
     return s
 
 def _normalize_text(s: str) -> str:
-    s = _fix_mojibake(s or "")
-    replacements = {
+    s = _fix_mojibake(s)
+    repl = {
         "\u2018": "'", "\u2019": "'",
         "\u201C": '"', "\u201D": '"',
         "\u2013": "-", "\u2014": "-",
         "\u00A0": " ",
         "\u200b": "", "\u200c": "", "\u200d": "", "\ufeff": ""
     }
-    for k, v in replacements.items():
+    for k, v in repl.items():
         s = s.replace(k, v)
-    # squeeze
-    import re as _re
-    s = _re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
-def _read_quotes_mapping_from_lines(quotes_lines: List[str]) -> Dict[str, str]:
-    """
-    Build mapping: normalized quoted text -> speaker.
-    Accepts raw lines like '16. Klaarg: "Back from Wish #748?"'
-    """
+def _read_quotes_mapping_from_text(quotes_txt: str):
     mapping = {}
-    for raw in quotes_lines or []:
-        line = (raw or "").strip()
+    speakers = set()
+    txt = _fix_mojibake(quotes_txt or "")
+    for line in txt.splitlines():
+        line = line.strip()
         if not line:
             continue
-        # Drop leading 'NN.' if present
-        import re as _re
-        line = _re.sub(r"^\s*\d+\.\s*", "", line)
-        if ":" not in line:
-            continue
-        spk, quote = line.split(":", 1)
-        spk = spk.strip()
-        # Normalize the quoted text for robust lookup
-        qnorm = _normalize_text(quote.strip().strip('“”"\' '))
-        mapping[qnorm] = spk
-    return mapping
+        line = re.sub(r"^\s*\d+\.\s*", "", line)  # strip "16. " etc
+        if ":" in line:
+            spk, quote = line.split(":", 1)
+            spk = spk.strip()
+            speakers.add(spk)
+            quote_norm = _normalize_text(quote.strip().strip("“”\"' "))
+            mapping[quote_norm] = spk
+    return mapping, speakers
 
-def _paragraph_in_summary(tag) -> bool:
-    # Skip <p> elements inside the summary/ranking sections
-    for parent in tag.parents:
-        attrs = getattr(parent, "attrs", None)
-        if not attrs:
-            continue
-        pid = parent.get("id")
-        if pid in {"character-summary", "speaker-ranking", "first-lines-summary"}:
+def _paragraph_in_summary(p):
+    for parent in p.parents:
+        if getattr(parent, "attrs", None) and parent.get("id") in {
+            "character-summary", "speaker-ranking", "first-lines-summary"
+        }:
             return True
     return False
 
 def _is_only_quotes_or_space(raw: str) -> bool:
     return bool(raw) and all(ch.isspace() or ch in QUOTE_CHARS for ch in raw)
 
-def _attach_quotes_heuristic(rows_for_para: List[Dict[str,str]]) -> List[Dict[str,str]]:
-    """
-    After attribution + ERROR folding, fix stray quote segments that are only quotes/spaces.
-    - If the tiny segment is a leading quote + optional spaces, attach to previous line's end.
-    - If it is a trailing quote + optional spaces, attach to next line's start.
-    - Otherwise drop it.
-    """
-    import re as _re
+def _attach_quotes_heuristic(rows_for_para):
+    """Intra-paragraph fix for tiny lines that are only quotes/spaces."""
     i = 0
     while i < len(rows_for_para):
         line = rows_for_para[i]["Line"]
@@ -101,14 +83,12 @@ def _attach_quotes_heuristic(rows_for_para: List[Dict[str,str]]) -> List[Dict[st
             prev_ok = i > 0
             next_ok = i + 1 < len(rows_for_para)
             moved = False
-            if prev_ok and _re.match(rf'^[{_re.escape(QUOTE_CHARS)}]\s*$', line):
+            if prev_ok and re.match(r'^[\"“”]\s*$', line):
                 rows_for_para[i-1]["Line"] = (rows_for_para[i-1]["Line"] + line).rstrip()
-                rows_for_para.pop(i)
-                moved = True
-            elif next_ok and _re.match(rf'^\s*[{_re.escape(QUOTE_CHARS)}]$', line):
+                rows_for_para.pop(i); moved = True
+            elif next_ok and re.match(r'^\s*[\"“”]$', line):
                 rows_for_para[i+1]["Line"] = line + rows_for_para[i+1]["Line"]
-                rows_for_para.pop(i)
-                moved = True
+                rows_for_para.pop(i); moved = True
             if moved:
                 continue
             else:
@@ -117,46 +97,84 @@ def _attach_quotes_heuristic(rows_for_para: List[Dict[str,str]]) -> List[Dict[st
         i += 1
     return rows_for_para
 
-def _html_to_dialogue_rows(final_html: str, quotes_map: Dict[str,str]) -> List[Dict[str,str]]:
+def _final_crossline_quote_fix(rows):
     """
-    Parse the already-built Step-4 HTML to rows of {Speaker, Line}.
-    Rules:
-      - For each <span class="highlight">...</span>, look up normalized text in quotes_map.
-        * If found and speaker == 'Error' -> treat as ERROR (later folded into narration within the same paragraph).
-        * If found and speaker is 'Do Not Read' (case-insensitive) -> keep as 'Do Not Read'.
-        * Else use that speaker name.
-      - Non-highlight text inside the paragraph is Narration.
-      - Fold ERROR into adjacent Narration within the same paragraph; merge adjacent narrations.
-      - Finally run the quote-attachment heuristic on tiny quote-only segments.
+    FINAL pass after v4 parsing:
+    - If a line starts with '\" ' (quote then space), move that leading quote to the end of the previous
+      line *within the same paragraph*.
+    - If a line ends with ' \"' (space then quote), move that trailing quote to the start of the next
+      line *within the same paragraph*.
+    We operate per paragraph using the 'ParaId' key.
     """
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(final_html, "html.parser")
+    out = []
+    # group by paragraph
+    by_para = {}
+    for r in rows:
+        by_para.setdefault(r["ParaId"], []).append(r)
+
+    def starts_with_quote_space(t):  # '" ' or '“ ' or '” '
+        return len(t) >= 2 and t[0] in QUOTE_CHARS and t[1].isspace()
+    def ends_with_space_quote(t):    # ' "'
+        return len(t) >= 2 and t[-1] in QUOTE_CHARS and t[-2].isspace()
+
+    for pid, plist in by_para.items():
+        i = 0
+        while i < len(plist):
+            cur = plist[i]
+            line = cur["Line"]
+
+            # move leading quote to previous
+            if starts_with_quote_space(line) and i > 0:
+                plist[i-1]["Line"] = (plist[i-1]["Line"].rstrip() + line[0]).rstrip()
+                plist[i]["Line"] = _normalize_text(line[1:])
+                line = plist[i]["Line"]
+
+            # move trailing quote to next
+            if ends_with_space_quote(line) and i + 1 < len(plist):
+                plist[i+1]["Line"] = line[-1] + plist[i+1]["Line"]
+                plist[i]["Line"] = _normalize_text(line[:-1])
+
+            i += 1
+
+        out.extend(plist)
+
+    # squeeze spaces one last time
+    for r in out:
+        r["Line"] = re.sub(r"\s+", " ", r["Line"]).strip()
+    return out
+
+def build_dialogue_csv_from_html_and_quotes(html_text: str, quotes_text: str) -> pd.DataFrame:
+    """
+    v4 parser with ERROR folding into narration (only within paragraph),
+    DNR kept, attribution via quotes.txt, then final cross-line quote repair.
+    Returns a DataFrame with columns ['Speaker','Line'].
+    """
+    soup = BeautifulSoup(html_text or "", "html.parser")
+    quotes_map, _ = _read_quotes_mapping_from_text(quotes_text or "")
+
     all_rows = []
+    para_counter = 0
 
     for p in soup.find_all("p"):
         if _paragraph_in_summary(p):
             continue
 
-        # Gather items in order
-        items = []  # dicts: {type: 'NARR'|'SPEECH'|'DNR'|'ERROR', speaker?, text}
+        para_counter += 1
+        items = []  # ordered items in this <p>
+
         for node in p.children:
             name = getattr(node, "name", None)
             if name == "span" and "highlight" in (node.get("class") or []):
                 raw = node.get_text()
                 text = _normalize_text(raw)
                 spk = quotes_map.get(text)
-                if spk is None:
-                    items.append({"type": "ERROR", "text": text})
+                if spk is None or spk.lower() == "error":
+                    items.append({"type": "ERROR", "speaker": None, "text": text})
+                elif spk.lower() in {"do not read", "do-not-read", "dnr"}:
+                    items.append({"type": "DNR", "speaker": "Do Not Read", "text": text})
                 else:
-                    low = spk.lower()
-                    if low == "error":
-                        items.append({"type": "ERROR", "text": text})
-                    elif low in {"do not read", "do-not-read", "dnr"}:
-                        items.append({"type": "DNR", "speaker": "Do Not Read", "text": text})
-                    else:
-                        items.append({"type": "SPEECH", "speaker": spk, "text": text})
+                    items.append({"type": "SPEECH", "speaker": spk, "text": text})
             else:
-                # plain text / other tags => narration
                 raw = node.get_text() if name else str(node)
                 text = _normalize_text(raw)
                 if text:
@@ -165,7 +183,7 @@ def _html_to_dialogue_rows(final_html: str, quotes_map: Dict[str,str]) -> List[D
         if not items:
             continue
 
-        # Fold ERROR into adjacent narration within this paragraph
+        # Fold ERROR -> Narration within this paragraph, then merge adjacent Narration
         folded = []
         for it in items:
             if it["type"] == "ERROR":
@@ -176,7 +194,6 @@ def _html_to_dialogue_rows(final_html: str, quotes_map: Dict[str,str]) -> List[D
             else:
                 folded.append(it)
 
-        # Merge adjacent NARR
         merged = []
         for it in folded:
             if merged and merged[-1]["type"] == "NARR" and it["type"] == "NARR":
@@ -184,55 +201,29 @@ def _html_to_dialogue_rows(final_html: str, quotes_map: Dict[str,str]) -> List[D
             else:
                 merged.append(it)
 
-        # Build per-paragraph rows
+        # Emit rows for this paragraph
         para_rows = []
         for it in merged:
             if it["type"] == "NARR":
-                para_rows.append({"Speaker": "Narration", "Line": it["text"]})
+                para_rows.append({"Speaker": "Narration", "Line": it["text"], "ParaId": para_counter})
             elif it["type"] == "DNR":
-                para_rows.append({"Speaker": "Do Not Read", "Line": it["text"]})
+                para_rows.append({"Speaker": "Do Not Read", "Line": it["text"], "ParaId": para_counter})
             elif it["type"] == "SPEECH":
-                para_rows.append({"Speaker": it["speaker"], "Line": it["text"]})
+                para_rows.append({"Speaker": it["speaker"], "Line": it["text"], "ParaId": para_counter})
 
-        # LAST: attach orphan quote marks
+        # v4 intra-paragraph quote attachment (tiny all-quote lines)
         para_rows = _attach_quotes_heuristic(para_rows)
 
         all_rows.extend(para_rows)
 
-    # final squeeze
-    import re as _re
-    for r in all_rows:
-        r["Line"] = _re.sub(r"\s+", " ", r["Line"]).strip()
-    return all_rows
+    # FINAL cross-line quote repair across adjacent rows (still within paragraph)
+    all_rows = _final_crossline_quote_fix(all_rows)
 
-def build_dialogue_csv_from_final_html(final_html: str, quotes_lines: List[str]) -> bytes:
-    """
-    Public helper: given the Step-4 HTML string and the finalised quotes.txt lines,
-    return CSV bytes with columns Speaker,Line.
-    """
-    qmap = _read_quotes_mapping_from_lines(quotes_lines)
-    rows = _html_to_dialogue_rows(final_html, qmap)
-    df = pd.DataFrame(rows, columns=["Speaker", "Line"])
-    return df.to_csv(index=False).encode("utf-8")
-    
-def build_csv_from_current_output(html_bytes, quotes_lines):
-    """Return CSV bytes using the same v4+final-pass parser you already validated."""
-    from pathlib import Path
-    import tempfile
+    # Build DF
+    df = pd.DataFrame([{"Speaker": r["Speaker"], "Line": r["Line"]} for r in all_rows],
+                      columns=["Speaker", "Line"])
+    return df
 
-    from winter_scorched_parser import parse_document, read_quotes_mapping  # import your proven parser module
-
-    with tempfile.TemporaryDirectory() as tmp:
-        html_path = Path(tmp) / "tmp.html"
-        quotes_path = Path(tmp) / "tmp_quotes.txt"
-
-        html_path.write_bytes(html_bytes)
-        quotes_path.write_text("".join(quotes_lines), encoding="utf-8")
-
-        quotes_map, _ = read_quotes_mapping(quotes_path)
-        df = parse_document(html_path, quotes_map)
-        return df.to_csv(index=False).encode("utf-8")    
-    
 def trim_paragraph_cache_before_previous(previous_html: str):
     try:
         djson_path = st.session_state.get('d_json_path')
@@ -2096,9 +2087,18 @@ elif st.session_state.step == 4:
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
-    csv_bytes = build_csv_from_current_output(html_bytes, st.session_state.quotes_lines)
-    st.download_button("Download CSV File", csv_bytes,
-                       file_name=f"{st.session_state.userkey}-{st.session_state.book_name}.csv", mime="text/csv")
+    
+        # --- Generate and download Dialogue CSV from final HTML + quotes ---
+    from io import BytesIO
+    df_csv = build_dialogue_csv_from_html_and_quotes(
+        final_html,
+        "".join(st.session_state.quotes_lines)
+    )
+    csv_bytes = df_csv.to_csv(index=False).encode("utf-8")
+    st.download_button("Download Dialogue CSV", csv_bytes,
+                       file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-dialogue.csv",
+                       mime="text/csv")
+    
     if os.path.exists(get_unmatched_quotes_filename()):
         with open(get_unmatched_quotes_filename(), "rb") as f:
             unmatched_bytes = f.read()
