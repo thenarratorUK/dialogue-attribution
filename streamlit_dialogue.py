@@ -222,9 +222,17 @@ def build_dialogue_csv_from_html_and_quotes(html_text: str, quotes_text: str) ->
     # FINAL cross-line quote repair across adjacent rows (still within paragraph)
     all_rows = _final_crossline_quote_fix(all_rows)
 
-    # Build DF
-    df = pd.DataFrame([{"Speaker": r["Speaker"], "Line": r["Line"]} for r in all_rows],
-                      columns=["Speaker", "Line"])
+    # Build DataFrame and add FileName as the third column
+    df = pd.DataFrame(
+        [{"Speaker": r["Speaker"], "Line": r["Line"]} for r in all_rows],
+        columns=["Speaker", "Line"]
+    )
+
+    # Append FileName column after Speaker and Line
+    df["FileName"] = [
+        f"{i:05d}_{df.iloc[i-1]['Speaker']}_TakeX" for i in range(1, len(df) + 1)
+    ]
+
     return df
 
 def trim_paragraph_cache_before_previous(previous_html: str):
