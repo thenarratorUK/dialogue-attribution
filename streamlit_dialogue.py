@@ -22,13 +22,15 @@ def encode_font_base64(path: str) -> str:
 def build_font_face_css(fontsel: str, embed_base64: bool = False) -> str:
     """
     Return a @font-face CSS block for the selected font, or "" if not needed.
-    If embed_base64 is True, embed Lexend/Gentium Basic as data: URLs.
+    If embed_base64 is True, embed the font as a Base64 data URL.
+    Supports: Lexend (TTF), Gentium Basic (TTF), OpenDyslexic (OTF).
     """
-    # Only Lexend / Gentium Basic are self-hosted; others rely on system fonts.
+    # --- Lexend (TTF) --------------------------------------------------------
     if fontsel == "Lexend":
+        font_path = "fonts/Lexend-Regular.ttf"
         if embed_base64:
             try:
-                b64 = encode_font_base64("fonts/Lexend-Regular.ttf")
+                b64 = encode_font_base64(font_path)
             except FileNotFoundError:
                 return ""
             return f"""
@@ -40,18 +42,21 @@ def build_font_face_css(fontsel: str, embed_base64: bool = False) -> str:
 }}
 """
         else:
-            return """
-@font-face {
+            return f"""
+@font-face {{
   font-family: 'Lexend';
-  src: url('fonts/Lexend-Regular.ttf') format('truetype');
+  src: url('{font_path}') format('truetype');
   font-weight: normal;
   font-style: normal;
-}
+}}
 """
+
+    # --- Gentium Basic (TTF) ------------------------------------------------
     elif fontsel == "Gentium Basic":
+        font_path = "fonts/GentiumBasic-Regular.ttf"
         if embed_base64:
             try:
-                b64 = encode_font_base64("fonts/GentiumBasic-Regular.ttf")
+                b64 = encode_font_base64(font_path)
             except FileNotFoundError:
                 return ""
             return f"""
@@ -63,16 +68,43 @@ def build_font_face_css(fontsel: str, embed_base64: bool = False) -> str:
 }}
 """
         else:
-            return """
-@font-face {
+            return f"""
+@font-face {{
   font-family: 'Gentium Basic';
-  src: url('fonts/GentiumBasic-Regular.ttf') format('truetype');
+  src: url('{font_path}') format('truetype');
   font-weight: normal;
   font-style: normal;
-}
+}}
 """
+
+    # --- OpenDyslexic (OTF) -------------------------------------------------
+    elif fontsel == "OpenDyslexic":
+        font_path = "fonts/OpenDyslexic-Regular.otf"
+        if embed_base64:
+            try:
+                b64 = encode_font_base64(font_path)
+            except FileNotFoundError:
+                return ""
+            return f"""
+@font-face {{
+  font-family: 'OpenDyslexic';
+  src: url(data:font/otf;base64,{b64}) format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}}
+"""
+        else:
+            return f"""
+@font-face {{
+  font-family: 'OpenDyslexic';
+  src: url('{font_path}') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+}}
+"""
+
+    # --- System fonts (Avenir, Helvetica, Arial, etc.) ----------------------
     else:
-        # Avenir, Helvetica, Arial, etc. – system fonts only
         return ""
 
 _MOJIBAKE_FIXES = {
@@ -710,7 +742,7 @@ if st.session_state.step == 0:
         "Georgia",
         "Times New Roman",
         "Courier New",
-        "Comic Sans",
+        "Open Dyslexic",
         "Gentium Basic",
         "Lexend",
     ]
@@ -718,8 +750,7 @@ if st.session_state.step == 0:
     # Map stored CSS font name back to dropdown label
     current_font = st.session_state.get("fontsel", "Avenir")
     css_to_label = {
-        "Comic Sans MS": "Comic Sans",
-        # Others map directly
+        "Open Dyslexic": "Open Dyslexic",
         "Avenir": "Avenir",
         "Helvetica": "Helvetica",
         "Arial": "Arial",
@@ -742,10 +773,7 @@ if st.session_state.step == 0:
     )
 
     # Map label to actual CSS font-family name
-    if chosen_label == "Comic Sans":
-        fontsel = "Comic Sans MS"
-    else:
-        fontsel = chosen_label
+    fontsel = chosen_label
 
     st.session_state.fontsel = fontsel
 
