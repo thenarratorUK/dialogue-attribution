@@ -14,6 +14,67 @@ from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
 import html
 
+def encode_font_base64(path: str) -> str:
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+
+def build_font_face_css(fontsel: str, embed_base64: bool = False) -> str:
+    """
+    Return a @font-face CSS block for the selected font, or "" if not needed.
+    If embed_base64 is True, embed Lexend/Gentium Basic as data: URLs.
+    """
+    # Only Lexend / Gentium Basic are self-hosted; others rely on system fonts.
+    if fontsel == "Lexend":
+        if embed_base64:
+            try:
+                b64 = encode_font_base64("fonts/Lexend-Regular.ttf")
+            except FileNotFoundError:
+                return ""
+            return f"""
+@font-face {{
+  font-family: 'Lexend';
+  src: url(data:font/ttf;base64,{b64}) format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}}
+"""
+        else:
+            return """
+@font-face {
+  font-family: 'Lexend';
+  src: url('fonts/Lexend-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+"""
+    elif fontsel == "Gentium Basic":
+        if embed_base64:
+            try:
+                b64 = encode_font_base64("fonts/GentiumBasic-Regular.ttf")
+            except FileNotFoundError:
+                return ""
+            return f"""
+@font-face {{
+  font-family: 'Gentium Basic';
+  src: url(data:font/ttf;base64,{b64}) format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}}
+"""
+        else:
+            return """
+@font-face {
+  font-family: 'Gentium Basic';
+  src: url('fonts/GentiumBasic-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+"""
+    else:
+        # Avenir, Helvetica, Arial, etc. – system fonts only
+        return ""
+
 _MOJIBAKE_FIXES = {
     # common utf8->latin1
     "â€˜": "‘", "â€™": "’", "â€œ": "“", "â€": "”",
@@ -504,10 +565,18 @@ def write_paragraph_json_for_session():
 #    """Deprecated: use write_paragraph_json_for_session(). Keeping for backward compatibility."""
 #    write_paragraph_json_for_session()
 
+# Ensure a default font selection in session_state
+if "fontsel" not in st.session_state:
+    st.session_state.fontsel = "Avenir"
 
+fontsel = st.session_state.fontsel
+
+# Build @font-face once, using the shared helper (no Base64 needed for UI)
+font_face_css = build_font_face_css(fontsel, embed_base64=False)
 # Inject custom CSS
-custom_css = """
+custom_css = f"""
 <style>
+{font_face_css}
 :root {
   --primary-color: #008080;      /* Teal */
   --primary-hover: #007070;
@@ -516,7 +585,7 @@ custom_css = """
   --card-background: #ffffff;
   --card-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
   --border-radius: 10px;
-  --font-family: 'Avenir', sans-serif;
+  --font-family: '{fontsel}', sans-serif;
   --accent-color: #ff9900;
 }
 
@@ -1990,6 +2059,8 @@ elif st.session_state.step == 4:
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
     ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
     first_lines_html = generate_first_lines_html(quotes_list, list(st.session_state.canonical_map.values()))
+    fontsel = st.session_state.get("fontsel", "Avenir")
+    font_face_html = build_font_face_css(fontsel, embed_base64=True)
     final_html_body = summary_html + "\n<br><br><br>\n" + ranking_html + "\n<br><br><br>\n" + first_lines_html + "\n" + final_html_body
     final_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1998,8 +2069,9 @@ elif st.session_state.step == 4:
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{st.session_state.book_name}</title>
   <style>
+    {font_face_html}
     body {{
-      font-family: Avenir, sans-serif;
+      font-family: '{fontsel}', sans-serif;
       line-height: 2;
       max-width: 500px;
       margin: auto;
