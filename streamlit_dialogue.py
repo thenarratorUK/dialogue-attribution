@@ -7,16 +7,12 @@ import mammoth
 import docx
 import base64
 import io
-import pandas as pd
+import csv
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
 import html
-
-# ===== Dialogue CSV Builder (v4 + final quote-fix) =====
-
-QUOTE_CHARS = '"“”'
 
 _MOJIBAKE_FIXES = {
     # common utf8->latin1
@@ -34,206 +30,147 @@ def _fix_mojibake(s: str) -> str:
     for k, v in _MOJIBAKE_FIXES.items():
         s = s.replace(k, v)
     return s
+    
+def build_csv_from_docx_json_and_quotes():
+    """
+    Rebuild the paragraph JSON from the DOCX and use quotes_lines
+    to generate a CSV with Speaker + Line + FileName using the
+    search/trim loop.
 
-def _normalize_text(s: str) -> str:
-    s = _fix_mojibake(s)
-    repl = {
-        "\u2018": "'", "\u2019": "'",
-        "\u201C": '"', "\u201D": '"',
-        "\u2013": "-", "\u2014": "-",
-        "\u00A0": " ",
-        "\u200b": "", "\u200c": "", "\u200d": "", "\ufeff": ""
-    }
-    for k, v in repl.items():
-        s = s.replace(k, v)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+    Changes vs previous version:
+      - Match on HTML-stripped, mojibake-fixed paragraph text.
+      - Skip 'Do Not Read:' lines from quotes.txt.
+      - Keep a minimal fallback but avoid duplicate narration
+        for unmatched quote segments.
+    """
+    import os, json, re, io, csv
 
-def _read_quotes_mapping_from_text(quotes_txt: str):
-    mapping = {}
-    speakers = set()
-    txt = _fix_mojibake(quotes_txt or "")
-    for line in txt.splitlines():
-        line = line.strip()
+    # Ensure the JSON is up to date for the current DOCX
+    write_paragraph_json_for_session()
+    json_path = st.session_state.get("d_json_path")
+    if not json_path or not os.path.exists(json_path):
+        return b""
+
+    # --- load and clean paragraph list ---
+    with open(json_path, "r", encoding="utf-8") as f:
+        raw_paragraphs = json.load(f)
+
+    def strip_tags(text: str) -> str:
+        # Remove simple HTML-like tags but do NOT normalise whitespace here
+        return re.sub(r"<[^>]*>", "", text or "")
+
+    # Plain, mojibake-fixed paragraphs used for all matching and output
+    paragraphs_plain = [_fix_mojibake(strip_tags(p)) for p in raw_paragraphs]
+
+    quotes_lines = st.session_state.get("quotes_lines") or []
+
+    def normalise_speaker_name(s: str) -> str:
+        # We still honour Error->Narration, but do it at the very end as well
+        if s and s.strip().lower() == "error":
+            return "Narration"
+        return s
+
+    rows: list[tuple[str, str]] = []      # (Speaker, Line)
+    remaining = list(paragraphs_plain)    # trimmed as we go (plain text only)
+    unmatched_segments: list[str] = []    # track text we emitted via fallback
+
+    # =============== CORE LOOP THROUGH QUOTES.TXT ===============
+    for raw_line in quotes_lines:
+        line = raw_line.strip()
         if not line:
             continue
-        line = re.sub(r"^\s*\d+\.\s*", "", line)  # strip "16. " etc
-        if ":" in line:
-            spk, quote = line.split(":", 1)
-            spk = spk.strip()
-            speakers.add(spk)
-            quote_norm = _normalize_text(quote.strip().strip("“”\"' "))
-            mapping[quote_norm] = spk
-    return mapping, speakers
 
-def _paragraph_in_summary(p):
-    for parent in p.parents:
-        if getattr(parent, "attrs", None) and parent.get("id") in {
-            "character-summary", "speaker-ranking", "first-lines-summary"
-        }:
-            return True
-    return False
+        # Remove leading "2621. " style numbering
+        line_wo_num = re.sub(r"^\s*\d+\.\s*", "", line)
 
-def _is_only_quotes_or_space(raw: str) -> bool:
-    return bool(raw) and all(ch.isspace() or ch in QUOTE_CHARS for ch in raw)
-
-def _attach_quotes_heuristic(rows_for_para):
-    """Intra-paragraph fix for tiny lines that are only quotes/spaces."""
-    i = 0
-    while i < len(rows_for_para):
-        line = rows_for_para[i]["Line"]
-        if _is_only_quotes_or_space(line):
-            prev_ok = i > 0
-            next_ok = i + 1 < len(rows_for_para)
-            moved = False
-            if prev_ok and re.match(r'^[\"“”]\s*$', line):
-                rows_for_para[i-1]["Line"] = (rows_for_para[i-1]["Line"] + line).rstrip()
-                rows_for_para.pop(i); moved = True
-            elif next_ok and re.match(r'^\s*[\"“”]$', line):
-                rows_for_para[i+1]["Line"] = line + rows_for_para[i+1]["Line"]
-                rows_for_para.pop(i); moved = True
-            if moved:
-                continue
-            else:
-                rows_for_para.pop(i)
-                continue
-        i += 1
-    return rows_for_para
-
-def _final_crossline_quote_fix(rows):
-    """
-    FINAL pass after v4 parsing:
-    - If a line starts with '\" ' (quote then space), move that leading quote to the end of the previous
-      line *within the same paragraph*.
-    - If a line ends with ' \"' (space then quote), move that trailing quote to the start of the next
-      line *within the same paragraph*.
-    We operate per paragraph using the 'ParaId' key.
-    """
-    out = []
-    # group by paragraph
-    by_para = {}
-    for r in rows:
-        by_para.setdefault(r["ParaId"], []).append(r)
-
-    def starts_with_quote_space(t):  # '" ' or '“ ' or '” '
-        return len(t) >= 2 and t[0] in QUOTE_CHARS and t[1].isspace()
-    def ends_with_space_quote(t):    # ' "'
-        return len(t) >= 2 and t[-1] in QUOTE_CHARS and t[-2].isspace()
-
-    for pid, plist in by_para.items():
-        i = 0
-        while i < len(plist):
-            cur = plist[i]
-            line = cur["Line"]
-
-            # move leading quote to previous
-            if starts_with_quote_space(line) and i > 0:
-                plist[i-1]["Line"] = (plist[i-1]["Line"].rstrip() + line[0]).rstrip()
-                plist[i]["Line"] = _normalize_text(line[1:])
-                line = plist[i]["Line"]
-
-            # move trailing quote to next
-            if ends_with_space_quote(line) and i + 1 < len(plist):
-                plist[i+1]["Line"] = line[-1] + plist[i+1]["Line"]
-                plist[i]["Line"] = _normalize_text(line[:-1])
-
-            i += 1
-
-        out.extend(plist)
-
-    # squeeze spaces one last time
-    for r in out:
-        r["Line"] = re.sub(r"\s+", " ", r["Line"]).strip()
-    return out
-
-def build_dialogue_csv_from_html_and_quotes(html_text: str, quotes_text: str) -> pd.DataFrame:
-    """
-    v4 parser with ERROR folding into narration (only within paragraph),
-    DNR kept, attribution via quotes.txt, then final cross-line quote repair.
-    Returns a DataFrame with columns ['Speaker','Line'].
-    """
-    soup = BeautifulSoup(html_text or "", "html.parser")
-    quotes_map, _ = _read_quotes_mapping_from_text(quotes_text or "")
-
-    all_rows = []
-    para_counter = 0
-
-    for p in soup.find_all("p"):
-        if _paragraph_in_summary(p):
+        if ":" not in line_wo_num:
             continue
 
-        para_counter += 1
-        items = []  # ordered items in this <p>
-
-        for node in p.children:
-            name = getattr(node, "name", None)
-            if name == "span" and "highlight" in (node.get("class") or []):
-                raw = node.get_text()
-                text = _normalize_text(raw)
-                spk = quotes_map.get(text)
-                if spk is None or spk.lower() == "error":
-                    items.append({"type": "ERROR", "speaker": None, "text": text})
-                elif spk.lower() in {"do not read", "do-not-read", "dnr"}:
-                    items.append({"type": "DNR", "speaker": "Do Not Read", "text": text})
-                else:
-                    items.append({"type": "SPEECH", "speaker": spk, "text": text})
-            else:
-                raw = node.get_text() if name else str(node)
-                text = _normalize_text(raw)
-                if text:
-                    items.append({"type": "NARR", "speaker": "Narration", "text": text})
-
-        if not items:
+        speaker_part, quote_part = line_wo_num.split(":", 1)
+        speaker_raw = speaker_part.strip()
+        quote_text = quote_part.strip()
+        if not quote_text:
             continue
 
-        # Fold ERROR -> Narration within this paragraph, then merge adjacent Narration
-        folded = []
-        for it in items:
-            if it["type"] == "ERROR":
-                if folded and folded[-1]["type"] == "NARR":
-                    folded[-1]["text"] = (folded[-1]["text"] + " " + it["text"]).strip()
-                else:
-                    folded.append({"type": "NARR", "speaker": "Narration", "text": it["text"]})
-            else:
-                folded.append(it)
+        # Skip "Do Not Read:" lines entirely
+        if speaker_raw.lower().startswith("do not read"):
+            continue
 
-        merged = []
-        for it in folded:
-            if merged and merged[-1]["type"] == "NARR" and it["type"] == "NARR":
-                merged[-1]["text"] = (merged[-1]["text"] + " " + it["text"]).strip()
-            else:
-                merged.append(it)
+        speaker_norm = normalise_speaker_name(speaker_raw)
 
-        # Emit rows for this paragraph
-        para_rows = []
-        for it in merged:
-            if it["type"] == "NARR":
-                para_rows.append({"Speaker": "Narration", "Line": it["text"], "ParaId": para_counter})
-            elif it["type"] == "DNR":
-                para_rows.append({"Speaker": "Do Not Read", "Line": it["text"], "ParaId": para_counter})
-            elif it["type"] == "SPEECH":
-                para_rows.append({"Speaker": it["speaker"], "Line": it["text"], "ParaId": para_counter})
+        # Use mojibake-fixed quote text for matching
+        quote_match = _fix_mojibake(quote_text)
 
-        # v4 intra-paragraph quote attachment (tiny all-quote lines)
-        para_rows = _attach_quotes_heuristic(para_rows)
+        # ---- FIND QUOTE IN REMAINING PARAGRAPHS (PLAIN TEXT) ----
+        found_idx = -1
+        found_pos = -1
 
-        all_rows.extend(para_rows)
+        for idx, para in enumerate(remaining):
+            pos = para.find(quote_match)
+            if pos != -1:
+                found_idx = idx
+                found_pos = pos
+                break
 
-    # FINAL cross-line quote repair across adjacent rows (still within paragraph)
-    all_rows = _final_crossline_quote_fix(all_rows)
+        if found_idx == -1:
+            # Fallback: emit the quote from TXT, but remember it so we don't
+            # also emit the same text as Narration later.
+            unmatched_segments.append(quote_match)
+            rows.append((speaker_norm, quote_match))
+            continue
 
-    # Build DataFrame and add FileName as the third column
-    df = pd.DataFrame(
-        [{"Speaker": r["Speaker"], "Line": r["Line"]} for r in all_rows],
-        columns=["Speaker", "Line"]
-    )
+        # ---- 1. PARAGRAPHS BEFORE MATCH = NARRATION ----
+        before_paras = remaining[:found_idx]
+        for pre in before_paras:
+            plain = pre.strip()
+            if plain and plain not in unmatched_segments:
+                rows.append(("Narration", plain))
 
-    # Append FileName column after Speaker and Line
-    df["FileName"] = [
-        f"{i:05d}_{df.iloc[i-1]['Speaker']}_TakeX" for i in range(1, len(df) + 1)
-    ]
+        # ---- 2. TEXT BEFORE QUOTE IN MATCHING PARAGRAPH ----
+        current = remaining[found_idx]
+        before = current[:found_pos]
+        before_plain = before.strip()
+        if before_plain and before_plain not in unmatched_segments:
+            rows.append(("Narration", before_plain))
 
-    return df
+        # ---- 3. THE QUOTE ITSELF ----
+        rows.append((speaker_norm, quote_match))
+
+        # ---- 4. TRIM REMAINING TO AFTER QUOTE ----
+        after = current[found_pos + len(quote_match):]
+        new_remaining: list[str] = []
+        if after:
+            new_remaining.append(after)
+        new_remaining.extend(remaining[found_idx + 1:])
+        remaining = new_remaining
+
+    # ---- FINAL TAIL NARRATION ----
+    for tail in remaining:
+        plain = tail.strip()
+        if plain and plain not in unmatched_segments:
+            rows.append(("Narration", plain))
+
+    # =============== BUILD CSV WITH FILENAME COLUMN ===============
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Speaker", "Line", "FileName"])
+
+    for idx, (speaker, line) in enumerate(rows, start=1):
+        # Mojibake cleanup at the very end
+        speaker_clean = _fix_mojibake(speaker)
+        line_clean = _fix_mojibake(line)
+
+        # Error -> Narration normalisation
+        if speaker_clean.strip().lower() == "error":
+            speaker_clean = "Narration"
+
+        num = f"{idx:05d}"
+        safe_speaker = re.sub(r"\s+", "", speaker_clean) or "Narration"
+        filename = f"{num}_{safe_speaker}_TakeX"
+
+        writer.writerow([speaker_clean, line_clean, filename])
+
+    return buf.getvalue().encode("utf-8")
 
 def trim_paragraph_cache_before_previous(previous_html: str):
     try:
@@ -2098,18 +2035,9 @@ elif st.session_state.step == 4:
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
-    
-        # --- Generate and download Dialogue CSV from final HTML + quotes ---
-    from io import BytesIO
-    df_csv = build_dialogue_csv_from_html_and_quotes(
-        final_html,
-        "".join(st.session_state.quotes_lines)
-    )
-    csv_bytes = df_csv.to_csv(index=False).encode("utf-8")
-    st.download_button("Download Dialogue CSV", csv_bytes,
-                       file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-dialogue.csv",
-                       mime="text/csv")
-    
+    csv_bytes = build_csv_from_docx_json_and_quotes()
+    st.download_button("Download Lines CSV", csv_bytes,
+                       file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-lines.csv", mime="text/csv")
     if os.path.exists(get_unmatched_quotes_filename()):
         with open(get_unmatched_quotes_filename(), "rb") as f:
             unmatched_bytes = f.read()
