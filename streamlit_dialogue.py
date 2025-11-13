@@ -718,7 +718,7 @@ if st.session_state.step == 0:
     # Map stored CSS font name back to dropdown label
     current_font = st.session_state.get("fontsel", "Avenir")
     css_to_label = {
-        "Comic Sans MS": "Comic Sans",
+        "Comic Sans": "Comic Sans",
         # Others map directly
         "Avenir": "Avenir",
         "Helvetica": "Helvetica",
