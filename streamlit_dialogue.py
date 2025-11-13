@@ -742,7 +742,7 @@ if st.session_state.step == 0:
         "Georgia",
         "Times New Roman",
         "Courier New",
-        "Open Dyslexic",
+        "OpenDyslexic",
         "Gentium Basic",
         "Lexend",
     ]
@@ -750,7 +750,7 @@ if st.session_state.step == 0:
     # Map stored CSS font name back to dropdown label
     current_font = st.session_state.get("fontsel", "Avenir")
     css_to_label = {
-        "Open Dyslexic": "Open Dyslexic",
+        "OpenDyslexic": "OpenDyslexic",
         "Avenir": "Avenir",
         "Helvetica": "Helvetica",
         "Arial": "Arial",
