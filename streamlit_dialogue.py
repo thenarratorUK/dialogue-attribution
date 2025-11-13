@@ -697,8 +697,63 @@ if "step" not in st.session_state:
 
 if st.session_state.step == 0:
     st.title("Welcome to Scripter")
-    st.write("Please enter a unique identifier. This can be any memorable username or passphrase. It must be unique to you—do not share it.")
-    user_input = st.text_input("Enter your user key (username, nickname, or passphrase):", key="userkey_input")
+    st.write(
+        "Please enter a unique identifier. This can be any memorable username or passphrase. "
+        "It must be unique to you—do not share it."
+    )
+
+    # Font selection for UI + exported HTML
+    font_options = [
+        "Avenir",
+        "Helvetica",
+        "Arial",
+        "Georgia",
+        "Times New Roman",
+        "Courier New",
+        "Comic Sans",
+        "Gentium Basic",
+        "Lexend",
+    ]
+
+    # Map stored CSS font name back to dropdown label
+    current_font = st.session_state.get("fontsel", "Avenir")
+    css_to_label = {
+        "Comic Sans MS": "Comic Sans",
+        # Others map directly
+        "Avenir": "Avenir",
+        "Helvetica": "Helvetica",
+        "Arial": "Arial",
+        "Georgia": "Georgia",
+        "Times New Roman": "Times New Roman",
+        "Courier New": "Courier New",
+        "Gentium Basic": "Gentium Basic",
+        "Lexend": "Lexend",
+    }
+    current_label = css_to_label.get(current_font, "Avenir")
+    try:
+        default_index = font_options.index(current_label)
+    except ValueError:
+        default_index = font_options.index("Avenir")
+
+    chosen_label = st.selectbox(
+        "Choose a font for the UI and exported HTML:",
+        options=font_options,
+        index=default_index,
+    )
+
+    # Map label to actual CSS font-family name
+    if chosen_label == "Comic Sans":
+        fontsel = "Comic Sans MS"
+    else:
+        fontsel = chosen_label
+
+    st.session_state.fontsel = fontsel
+
+    # Existing user key input
+    user_input = st.text_input(
+        "Enter your user key (username, nickname, or passphrase):",
+        key="userkey_input",
+    )
     if st.button("Next"):
         if user_input.strip() == "":
             st.warning("You must enter a user key to continue.")
