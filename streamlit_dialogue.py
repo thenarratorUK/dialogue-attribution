@@ -590,22 +590,22 @@ custom_css = f"""
 }}
 
 /* Global Styles */
-body {
+body {{
   background-color: var(--background-color);
   font-family: var(--font-family);
   color: var(--text-color);
   margin: 0;
   padding: 0;
-}
+}}
 
-h1, h2, h3, h4, h5, h6 {
+h1, h2, h3, h4, h5, h6 {{
   color: var(--text-color);
   font-weight: 700;
   margin-bottom: 0.5em;
-}
+}}
 
 /* Button Styles */
-div.stButton > button {
+div.stButton > button {{
   background-color: var(--primary-color);
   color: #ffffff;
   border: none;
@@ -613,42 +613,42 @@ div.stButton > button {
   border-radius: var(--border-radius);
   cursor: pointer;
   transition: background-color 0.3s ease, transform 0.2s;
-}
+}}
 
-div.stButton > button:hover {
+div.stButton > button:hover {{
   background-color: var(--primary-hover);
   transform: translateY(-2px);
-}
+}}
 
 /* Card/Container Styling */
-.custom-container {
+.custom-container {{
   background: var(--card-background);
   padding: 2em;
   border-radius: var(--border-radius);
   box-shadow: var(--card-shadow);
   margin-bottom: 2em;
-}
+}}
 
-.css-1d391kg {
+.css-1d391kg {{
   background: var(--card-background);
   padding: 1em;
   border-radius: var(--border-radius);
   box-shadow: var(--card-shadow);
-}
+}}
 
 /* Form Element Styling */
-input, select, textarea {
+input, select, textarea {{
   border: 1px solid #ddd;
   border-radius: 4px;
   padding: 0.5em;
   font-size: 1em;
-}
+}}
 
-input:focus, select:focus, textarea:focus {
+input:focus, select:focus, textarea:focus {{
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 5px rgba(0, 128, 128, 0.3);
-}
+}}
 </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
