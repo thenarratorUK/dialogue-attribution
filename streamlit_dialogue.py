@@ -577,7 +577,7 @@ font_face_css = build_font_face_css(fontsel, embed_base64=False)
 custom_css = f"""
 <style>
 {font_face_css}
-:root {
+:root {{
   --primary-color: #008080;      /* Teal */
   --primary-hover: #007070;
   --background-color: #fdfdfd;
@@ -587,7 +587,7 @@ custom_css = f"""
   --border-radius: 10px;
   --font-family: '{fontsel}', sans-serif;
   --accent-color: #ff9900;
-}
+}}
 
 /* Global Styles */
 body {
