@@ -21,91 +21,165 @@ def encode_font_base64(path: str) -> str:
 
 def build_font_face_css(fontsel: str, embed_base64: bool = False) -> str:
     """
-    Return a @font-face CSS block for the selected font, or "" if not needed.
-    If embed_base64 is True, embed the font as a Base64 data URL.
-    Supports: Lexend (TTF), Gentium Basic (TTF), OpenDyslexic (OTF).
+    Return one or more @font-face CSS blocks for the selected font, or "" if not needed.
+    If embed_base64 is True, embed the font files as Base64 data URLs.
+
+    Supported families:
+      - Lexend: Lexend-VariableFont_wght.ttf (variable weight, no italics)
+      - Gentium Basic: Regular / Italic / Bold / Bold-Italic (TTF)
+      - OpenDyslexic: Regular / Italic / Bold / Bold-Italic (OTF)
+    Other fonts (Avenir, Helvetica, etc.) are treated as system fonts only.
     """
-    # --- Lexend (TTF) --------------------------------------------------------
+
+    def _face(
+        family: str,
+        path: str,
+        weight: str,
+        style: str,
+        fmt: str,
+        mime_subtype: str,
+    ) -> str:
+        """
+        Build a single @font-face rule for one file.
+        fmt: 'truetype' or 'opentype'
+        mime_subtype: 'ttf' or 'otf'
+        """
+        if embed_base64:
+            try:
+                b64 = encode_font_base64(path)
+            except FileNotFoundError:
+                return ""
+            src = f"data:font/{mime_subtype};base64,{b64}"
+        else:
+            src = path
+
+        return f"""
+@font-face {{
+  font-family: '{family}';
+  src: url('{src}') format('{fmt}');
+  font-weight: {weight};
+  font-style: {style};
+}}
+"""
+
+    rules: list[str] = []
+
+    # ---------------- Lexend (variable font, TTF) ----------------
     if fontsel == "Lexend":
-        font_path = "fonts/Lexend-Regular.ttf"
-        if embed_base64:
-            try:
-                b64 = encode_font_base64(font_path)
-            except FileNotFoundError:
-                return ""
-            return f"""
-@font-face {{
-  font-family: 'Lexend';
-  src: url(data:font/ttf;base64,{b64}) format('truetype');
-  font-weight: normal;
-  font-style: normal;
-}}
-"""
-        else:
-            return f"""
-@font-face {{
-  font-family: 'Lexend';
-  src: url('{font_path}') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-}}
-"""
+        # Single variable font covering weights 100–900, normal style only.
+        # Italic will be synthetic since there is no italic file.
+        rules.append(
+            _face(
+                family="Lexend",
+                path="fonts/Lexend-VariableFont_wght.ttf",
+                weight="100 900",       # variable font weight range
+                style="normal",
+                fmt="truetype",
+                mime_subtype="ttf",
+            )
+        )
 
-    # --- Gentium Basic (TTF) ------------------------------------------------
+    # --------------- Gentium Basic (full family, TTF) -------------
     elif fontsel == "Gentium Basic":
-        font_path = "fonts/GentiumBasic-Regular.ttf"
-        if embed_base64:
-            try:
-                b64 = encode_font_base64(font_path)
-            except FileNotFoundError:
-                return ""
-            return f"""
-@font-face {{
-  font-family: 'Gentium Basic';
-  src: url(data:font/ttf;base64,{b64}) format('truetype');
-  font-weight: normal;
-  font-style: normal;
-}}
-"""
-        else:
-            return f"""
-@font-face {{
-  font-family: 'Gentium Basic';
-  src: url('{font_path}') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-}}
-"""
+        # Regular
+        rules.append(
+            _face(
+                family="Gentium Basic",
+                path="fonts/GentiumBasic-Regular.ttf",
+                weight="400",
+                style="normal",
+                fmt="truetype",
+                mime_subtype="ttf",
+            )
+        )
+        # Italic
+        rules.append(
+            _face(
+                family="Gentium Basic",
+                path="fonts/GentiumBasic-Italic.ttf",
+                weight="400",
+                style="italic",
+                fmt="truetype",
+                mime_subtype="ttf",
+            )
+        )
+        # Bold
+        rules.append(
+            _face(
+                family="Gentium Basic",
+                path="fonts/GentiumBasic-Bold.ttf",
+                weight="700",
+                style="normal",
+                fmt="truetype",
+                mime_subtype="ttf",
+            )
+        )
+        # Bold-Italic
+        rules.append(
+            _face(
+                family="Gentium Basic",
+                path="fonts/GentiumBasic-Bold-Italic.ttf",
+                weight="700",
+                style="italic",
+                fmt="truetype",
+                mime_subtype="ttf",
+            )
+        )
 
-    # --- OpenDyslexic (OTF) -------------------------------------------------
+    # --------------- OpenDyslexic (full family, OTF) --------------
     elif fontsel == "OpenDyslexic":
-        font_path = "fonts/OpenDyslexic-Regular.otf"
-        if embed_base64:
-            try:
-                b64 = encode_font_base64(font_path)
-            except FileNotFoundError:
-                return ""
-            return f"""
-@font-face {{
-  font-family: 'OpenDyslexic';
-  src: url(data:font/otf;base64,{b64}) format('opentype');
-  font-weight: normal;
-  font-style: normal;
-}}
-"""
-        else:
-            return f"""
-@font-face {{
-  font-family: 'OpenDyslexic';
-  src: url('{font_path}') format('opentype');
-  font-weight: normal;
-  font-style: normal;
-}}
-"""
+        # Regular
+        rules.append(
+            _face(
+                family="OpenDyslexic",
+                path="fonts/OpenDyslexic-Regular.otf",
+                weight="400",
+                style="normal",
+                fmt="opentype",
+                mime_subtype="otf",
+            )
+        )
+        # Italic
+        rules.append(
+            _face(
+                family="OpenDyslexic",
+                path="fonts/OpenDyslexic-Italic.otf",
+                weight="400",
+                style="italic",
+                fmt="opentype",
+                mime_subtype="otf",
+            )
+        )
+        # Bold
+        rules.append(
+            _face(
+                family="OpenDyslexic",
+                path="fonts/OpenDyslexic-Bold.otf",
+                weight="700",
+                style="normal",
+                fmt="opentype",
+                mime_subtype="otf",
+            )
+        )
+        # Bold-Italic
+        rules.append(
+            _face(
+                family="OpenDyslexic",
+                path="fonts/OpenDyslexic-Bold-Italic.otf",
+                weight="700",
+                style="italic",
+                fmt="opentype",
+                mime_subtype="otf",
+            )
+        )
 
-    # --- System fonts (Avenir, Helvetica, Arial, etc.) ----------------------
+    # --------------- System fonts (no embedding) -------------------
     else:
+        # Avenir, Helvetica, Arial, Georgia, Times New Roman, Courier New, etc.
+        # Use system-installed fonts only; no @font-face needed.
         return ""
+
+    return "".join(rules)
 
 _MOJIBAKE_FIXES = {
     # common utf8->latin1
@@ -742,7 +816,7 @@ if st.session_state.step == 0:
         "Georgia",
         "Times New Roman",
         "Courier New",
-        "OpenDyslexic",
+        "Open Dyslexic",
         "Gentium Basic",
         "Lexend",
     ]
@@ -750,7 +824,7 @@ if st.session_state.step == 0:
     # Map stored CSS font name back to dropdown label
     current_font = st.session_state.get("fontsel", "Avenir")
     css_to_label = {
-        "OpenDyslexic": "OpenDyslexic",
+        "Open Dyslexic": "Open Dyslexic",
         "Avenir": "Avenir",
         "Helvetica": "Helvetica",
         "Arial": "Arial",
