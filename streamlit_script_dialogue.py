@@ -2534,16 +2534,15 @@ elif st.session_state.step == 4:
     p.script-line {{
       margin-left: 0;
       text-indent: 0;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      column-gap: 0.5em;
     }}
     .script-speaker {{
-      display: inline-block;
-      min-width: 6em;
       font-weight: bold;
     }}
     .script-dialogue {{
-      display: inline-block;
-      vertical-align: top;
-      width: calc(100% - 6em);
+      /* takes remaining space in the grid automatically */
     }}
 
   </style>
