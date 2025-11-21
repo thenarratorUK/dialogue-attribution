@@ -2531,20 +2531,20 @@ elif st.session_state.step == 4:
     }}
 
     /* Script layout */
-    p.script-line {
+    p.script-line {{
       margin-left: 0;
       text-indent: 0;
-    }
-    .script-speaker {
+    }}
+    .script-speaker {{
       display: inline-block;
       min-width: 6em;
       font-weight: bold;
-    }
-    .script-dialogue {
+    }}
+    .script-dialogue {{
       display: inline-block;
       vertical-align: top;
       width: calc(100% - 6em);
-    }
+    }}
 
   </style>
 </head>
