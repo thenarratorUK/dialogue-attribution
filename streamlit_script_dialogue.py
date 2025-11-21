@@ -1750,6 +1750,80 @@ def apply_manual_indentation_with_markers(original_docx, html):
                     tag["style"] = style_str
     return str(soup)
 
+def transform_script_layout(html: str) -> str:
+    """
+    Post-process the HTML produced by Mammoth + highlighting so that
+    script dialogue lines are rendered as:
+
+        <p class="script-line">
+          <span class="script-speaker">NAME:</span>
+          <span class="script-dialogue">...dialogue (with highlights)...</span>
+        </p>
+
+    We only transform <p> elements that:
+      - contain at least one <span class="highlight"> (i.e. actual dialogue), and
+      - start with something like 'NAME:' in ALL CAPS.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    for p in soup.find_all("p"):
+        # Only touch paragraphs that contain highlighted dialogue
+        if not p.find("span", class_="highlight"):
+            continue
+
+        full_text = p.get_text()
+        # Match leading ALLCAPS speaker name followed by a colon
+        m = re.match(r"^\s*([A-Z][A-Z0-9 ]{0,50})\s*:\s*", full_text)
+        if not m:
+            continue
+
+        speaker = m.group(1).strip()
+
+        # Remove the speaker prefix from the *HTML* content, not just the text
+        inner_html = p.decode_contents()
+        # Strip "  NAME   :   " + optional tabs/spaces
+        prefix_pattern = r"^\s*" + re.escape(speaker) + r"\s*:\s*[\t ]*"
+        dialogue_html, n_subs = re.subn(prefix_pattern, "", inner_html, count=1)
+        if n_subs == 0:
+            # Couldn't safely strip; skip this paragraph
+            continue
+
+        # Clear the paragraph and rebuild
+        p.clear()
+
+        # Remove margin-left from inline style, keep other style properties
+        if p.has_attr("style"):
+            parts = [part.strip() for part in p["style"].split(";") if part.strip()]
+            parts = [part for part in parts if not part.lower().startswith("margin-left")]
+            if parts:
+                p["style"] = "; ".join(parts)
+            else:
+                del p["style"]
+
+        # Add a class for styling
+        existing_classes = p.get("class", [])
+        if "script-line" not in existing_classes:
+            existing_classes.append("script-line")
+        if existing_classes:
+            p["class"] = existing_classes
+
+        # Speaker span
+        speaker_span = soup.new_tag("span", attrs={"class": "script-speaker"})
+        speaker_span.string = speaker + ":"
+        p.append(speaker_span)
+        p.append(" ")
+
+        # Dialogue span – preserve existing highlight spans etc.
+        dialogue_span = soup.new_tag("span", attrs={"class": "script-dialogue"})
+        frag = BeautifulSoup(dialogue_html, "html.parser")
+        for child in frag.contents:
+            dialogue_span.append(child)
+        p.append(dialogue_span)
+
+    return str(soup)
+
+
+# -------------------------
 # ---------------------------
 # Summary & Ranking Functions
 # ---------------------------
@@ -2424,6 +2498,8 @@ elif st.session_state.step == 4:
     quotes_list = load_quotes(quotes_file_path, st.session_state.canonical_map)
     highlighted_html = highlight_dialogue_in_html(html, quotes_list, st.session_state.speaker_colors)
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
+    if st.session_state.get("content_type", "Book") == "Script":
+        final_html_body = transform_script_layout(final_html_body)
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
     ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
     first_lines_html = generate_first_lines_html(quotes_list, list(st.session_state.canonical_map.values()))
@@ -2453,6 +2529,23 @@ elif st.session_state.step == 4:
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
     }}
+
+    /* Script layout */
+    p.script-line {
+      margin-left: 0;
+      text-indent: 0;
+    }
+    .script-speaker {
+      display: inline-block;
+      min-width: 6em;
+      font-weight: bold;
+    }
+    .script-dialogue {
+      display: inline-block;
+      vertical-align: top;
+      width: calc(100% - 6em);
+    }
+
   </style>
 </head>
 <body>
