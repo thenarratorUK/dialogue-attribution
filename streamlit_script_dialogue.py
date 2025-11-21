@@ -212,6 +212,52 @@ def build_csv_from_docx_json_and_quotes():
     """
     import os, json, re, io, csv
 
+    # If we're in Script mode, build the CSV directly from quotes.txt
+    if st.session_state.get("content_type", "Book") == "Script":
+        quotes_lines = st.session_state.get("quotes_lines") or []
+        canonical_map = st.session_state.get("canonical_map") or {}
+
+        # Parse each quotes.txt line: "123. Speaker: Dialogue"
+        pattern = re.compile(r"^\s*([0-9]+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*(?:[“\"])?(.+?)(?:[”\"])?\s*$")
+
+        rows: list[tuple[str, str]] = []
+
+        for raw_line in quotes_lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            m = pattern.match(line)
+            if not m:
+                continue
+            _, speaker_raw, quote = m.groups()
+            effective = smart_title(speaker_raw)
+            norm = normalize_speaker_name(effective)
+            canonical = canonical_map.get(norm, effective)
+            text_part = quote.strip()
+            if not text_part:
+                continue
+            rows.append((canonical, text_part))
+
+        # Build CSV: same filename pattern as the book workflow
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Speaker", "Line", "FileName"])
+
+        def normalise_speaker_name_local(s: str) -> str:
+            if s and s.strip().lower() == "error":
+                return "Narration"
+            return s
+
+        for idx, (speaker, line) in enumerate(rows, start=1):
+            speaker_clean = normalise_speaker_name_local(speaker)
+            line_clean = normalize_text(line)
+            num = f"{idx:05d}"
+            safe_speaker = re.sub(r"\s+", "", speaker_clean) or "Narration"
+            filename = f"{num}_{safe_speaker}_TakeX"
+            writer.writerow([speaker_clean, line_clean, filename])
+
+        return buf.getvalue().encode("utf-8")
+
     # Ensure the JSON is up to date for the current DOCX
     write_paragraph_json_for_session()
     json_path = st.session_state.get("d_json_path")
@@ -2542,7 +2588,7 @@ elif st.session_state.step == 4:
       font-weight: bold;
     }}
     .script-dialogue {{
-      /* takes remaining space in the grid automatically */
+      /* dialogue automatically takes remaining space in the second column */
     }}
 
   </style>
