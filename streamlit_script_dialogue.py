@@ -1207,8 +1207,8 @@ def extract_italic_spans(paragraph):
 
 def is_all_caps_name(s: str) -> bool:
     """
-    Return True if all alphabetic characters in s are uppercase and there is at least
-    one letter. Non-letter characters are ignored.
+    True if all alphabetic characters in s are uppercase and there is at least one letter.
+    Punctuation, digits and spaces are ignored for the check.
     """
     letters = [c for c in s if c.isalpha()]
     return bool(letters) and all(c.isupper() for c in letters)
@@ -1218,12 +1218,34 @@ def parse_docx_script(docx_path: str):
     """
     Parse a DOCX script and return a list of {"speaker": ..., "text": ...} using three patterns:
 
-      1) ALLCAPS NAME          (speaker only; dialogue follows on subsequent line(s))
-      2) ALLCAPS NAME Dialogue (with or without a ':' after the name)
-      3) Word Caps Name: Dialogue (colon mandatory; first colon splits name vs dialogue)
+      1) Name: Dialogue
+         - First colon splits name vs dialogue.
+         - Name may be any case.
+         - Left side must *look* like a name (<= 4 words, each word with letters starts uppercase).
+         - Right side must contain at least one 'dialogue-like' word:
+             * has any lowercase letters, or
+             * is a single-letter uppercase word (I, A, etc).
 
-    One DOCX paragraph is treated as one logical line.
+      2) NAME Dialogue
+         - No colon.
+         - First token is ALL CAPS (NAME).
+         - If the char immediately after NAME is a TAB:
+             * any non-empty remainder counts as dialogue (all caps allowed).
+         - If it is a SPACE (or other non-tab whitespace):
+             * look only at the FIRST word after NAME:
+               - dialogue only if that word has lowercase letters, or
+               - is a single-letter uppercase word (I, A, etc).
+             * If not, this line is NOT a dialogue line (e.g. MUSIC TRANSITION).
+
+      3) NAME
+         Dialogue
+         - Whole line is ALL CAPS → speaker cue.
+         - Following non-blank lines that are not new cues become dialogue until a blank or new cue.
+
+    One DOCX paragraph is treated as one line.
     """
+    import docx
+
     doc = docx.Document(docx_path)
     lines = [p.text.rstrip("\n") for p in doc.paragraphs]
 
@@ -1240,60 +1262,104 @@ def parse_docx_script(docx_path: str):
         current_speaker = None
         current_lines = []
 
+    def has_letters(w: str) -> bool:
+        return any(c.isalpha() for c in w)
+
+    def dialogue_word_anywhere(word: str) -> bool:
+        """
+        'Dialogue-like' word:
+          - has any lowercase letters; OR
+          - is a single-letter uppercase word (I, A, etc).
+        """
+        alpha = [c for c in word if c.isalpha()]
+        if not alpha:
+            return False
+        if any(c.islower() for c in alpha):
+            return True
+        return len(alpha) == 1 and alpha[0].isupper()
+
     for raw in lines:
-        line = raw.rstrip()
+        line = raw.rstrip("\r\n")
         s = line.strip()
 
-        # Blank line: end of current block
+        # Blank line ends current block
         if not s:
             flush()
             continue
 
-        # Cases with colon:
-        #   - ALLCAPS NAME: Dialogue
-        #   - Word Caps Name: Dialogue
+        # ---------- Pattern 1: Name: Dialogue ----------
         if ":" in s:
-            before, after = s.split(":", 1)  # first colon splits name vs dialogue
+            before, after = s.split(":", 1)
             name_part = before.strip()
             rest = after.lstrip()
 
-            has_dialogue = bool(rest) and any(c.islower() for c in rest)
-            looks_like_name = bool(name_part) and (
-                is_all_caps_name(name_part) or name_part[0].isupper()
-            )
+            if name_part and rest:
+                name_tokens = name_part.split()
+                # "Looks like a name" = 1–4 tokens, each token with letters starts uppercase
+                name_tokens_with_letters = [t for t in name_tokens if has_letters(t)]
+                looks_like_name = (
+                    len(name_tokens_with_letters) > 0
+                    and len(name_tokens) <= 4
+                    and all(t[0].isupper() for t in name_tokens_with_letters)
+                )
 
-            if has_dialogue and looks_like_name:
-                # New cue with inline dialogue
-                flush()
-                current_speaker = name_part
-                current_lines = [rest]
-                continue
+                words_rest = rest.split()
+                dialogue_exists = any(dialogue_word_anywhere(w) for w in words_rest)
 
-            # Not treated as cue+dialogue: could be a heading or misc text.
+                if looks_like_name and dialogue_exists:
+                    flush()
+                    current_speaker = name_part
+                    current_lines = [rest]
+                    continue
+
+            # Not a cue; maybe continuation text
             if current_speaker:
                 current_lines.append(s)
             continue
 
-        # No colon: possible ALLCAPS NAME Dialogue (inline, no colon)
-        m_inline = re.match(r'^([A-Z0-9 ]+)\s+(.*)$', s)
-        if m_inline:
-            name_segment = m_inline.group(1).strip()
-            rest = m_inline.group(2).strip()
-            if rest and is_all_caps_name(name_segment):
-                flush()
-                current_speaker = name_segment
-                current_lines = [rest]
-                continue
+        # ---------- No colon: patterns 2 and 3 ----------
 
-        # ALLCAPS NAME on its own; dialogue will be on following lines.
+        line_stripped = s
+        tokens = line_stripped.split()
+
+        if tokens:
+            first_tok = tokens[0]
+
+            # Pattern 2: NAME Dialogue (no colon, first token ALL CAPS)
+            if is_all_caps_name(first_tok):
+                # Character immediately after NAME in the stripped line
+                delim_char = line_stripped[len(first_tok)] if len(line_stripped) > len(first_tok) else " "
+                rest_str = line_stripped[len(first_tok):].lstrip()
+
+                if rest_str:
+                    if delim_char == "\t":
+                        # NAME<TAB>Dialogue: allow all caps dialogue
+                        flush()
+                        current_speaker = first_tok
+                        current_lines = [rest_str]
+                        continue
+                    else:
+                        # NAME<space>Dialogue: check FIRST word only
+                        rest_words = rest_str.split()
+                        first_rest_word = rest_words[0] if rest_words else ""
+                        if first_rest_word and dialogue_word_anywhere(first_rest_word):
+                            flush()
+                            current_speaker = first_tok
+                            current_lines = [rest_str]
+                            continue
+                # If there's no remainder or it doesn't look like dialogue,
+                # fall through to possible Pattern 3 (NAME alone) / continuation.
+
+        # Pattern 3: NAME on its own line
         if is_all_caps_name(s):
             flush()
             current_speaker = s
             continue
 
-        # Continuation text for current speaker
+        # Continuation of current speaker
         if current_speaker:
             current_lines.append(s)
+        # Else: stage directions / SFX / headings are ignored
 
     flush()
     return results
@@ -1301,20 +1367,26 @@ def parse_docx_script(docx_path: str):
 
 def extract_dialogue_from_docx_script(docx_path: str):
     """
-    Wrap parse_docx_script to return a list of numbered lines similar to quotes.txt:
+    Use parse_docx_script and return a list of numbered lines in the same logical
+    format as quotes.txt:
 
-        "<line_number>. Speaker: Dialogue"
+        "1. Speaker: Dialogue"
+
+    Speaker names are normalised with smart_title, dialogue text is left as-is.
     """
     pairs = parse_docx_script(docx_path)
     lines = []
     line_number = 1
     for pair in pairs:
-        speaker = (pair.get("speaker") or "").strip()
+        raw_speaker = (pair.get("speaker") or "").strip()
         text = (pair.get("text") or "").strip()
-        if not speaker or not text:
+        if not raw_speaker or not text:
             continue
+
+        speaker = smart_title(raw_speaker)  # JOHN HOLMES -> John Holmes, etc.
         lines.append(f"{line_number}. {speaker}: {text}")
         line_number += 1
+
     return lines
 
 
