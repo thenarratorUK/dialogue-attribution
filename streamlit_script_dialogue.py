@@ -2535,8 +2535,8 @@ elif st.session_state.step == 4:
       margin-left: 0;
       text-indent: 0;
       display: grid;
-      grid-template-columns: auto 1fr;
-      column-gap: 0.5em;
+      grid-template-columns: 9em 1fr;  /* fixed speaker column width */
+      column-gap: 0.75em;
     }}
     .script-speaker {{
       font-weight: bold;
