@@ -1591,28 +1591,20 @@ def extract_dialogue_from_docx_script_auto(docx_path: str):
     radio_lines = extract_dialogue_from_docx_script(docx_path) or []
     screen_lines = extract_dialogue_from_docx_screenplay(docx_path) or []
 
-    # No dialogue found anywhere -> default to radio for consistency
-    if not radio_lines and not screen_lines:
-        return [], "radio"
-
-    # Only one parser produced anything -> pick that
-    if screen_lines and not radio_lines:
+    # If the screenplay parser finds anything at all, prefer it.
+    # For well-formed radio-play scripts, parse_docx_screenplay()
+    # should typically return an empty list.
+    if screen_lines:
         return screen_lines, "screenplay"
-    if radio_lines and not screen_lines:
+
+    # Otherwise fall back to the existing radio parser.
+    if radio_lines:
         return radio_lines, "radio"
 
-    # Both produced something: choose the more plausible one.
-    # Heuristic: screenplay parser will usually produce many more
-    # cues on a true screenplay; radio parser may misfire on headings.
-    if len(screen_lines) >= len(radio_lines) * 1.5:
-        return screen_lines, "screenplay"
+    # No dialogue found anywhere -> default to radio for consistency
+    return [], "radio"
 
-    return radio_lines, "radio"
-
-def extract_dialogue_from_docx(book_name, docx_path):
-    # Helpers: italics-path check for quote enclosure (compare-only, no text mutation)
-    import re as _re_local
-    _SPACE_LIKE = _re_local.compile(r'[\u0020\u00A0\u2009\u200A\u200B\u202F\u205F\u3000]+')
+09\u200A\u200B\u202F\u205F\u3000]+')
     _OPEN_QS  = {'“', '"'}
     _CLOSE_QS = {'”', '"'}
     def _prev_non_space(_s: str, _idx: int) -> str:
