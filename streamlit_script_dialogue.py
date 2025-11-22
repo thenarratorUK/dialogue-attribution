@@ -1604,7 +1604,10 @@ def extract_dialogue_from_docx_script_auto(docx_path: str):
     # No dialogue found anywhere -> default to radio for consistency
     return [], "radio"
 
-09\u200A\u200B\u202F\u205F\u3000]+')
+def extract_dialogue_from_docx(book_name, docx_path):
+    # Helpers: italics-path check for quote enclosure (compare-only, no text mutation)
+    import re as _re_local
+    _SPACE_LIKE = _re_local.compile(r'[\u0020\u00A0\u2009\u200A\u200B\u202F\u205F\u3000]+')
     _OPEN_QS  = {'“', '"'}
     _CLOSE_QS = {'”', '"'}
     def _prev_non_space(_s: str, _idx: int) -> str:
