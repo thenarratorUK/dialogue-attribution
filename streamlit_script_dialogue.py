@@ -1970,13 +1970,14 @@ def transform_script_layout(html: str) -> str:
     script dialogue lines are rendered as:
 
         <p class="script-line">
-          <span class="script-speaker">NAME:</span>
+          <span class="script-speaker">NAME</span>
           <span class="script-dialogue">...dialogue (with highlights)...</span>
         </p>
 
-    We only transform <p> elements that:
-      - contain at least one <span class="highlight"> (i.e. actual dialogue), and
-      - start with something like 'NAME:' in ALL CAPS.
+    We transform two cases:
+      1) Radio-style "NAME: dialogue" paragraphs.
+      2) Screenplay-style paragraphs where a <strong>ALLCAPS NAME</strong>
+         appears at the start, followed by a <br/> and dialogue.
     """
     soup = BeautifulSoup(html, "html.parser")
 
@@ -1985,30 +1986,52 @@ def transform_script_layout(html: str) -> str:
         if not p.find("span", class_="highlight"):
             continue
 
+        # Try radio-style "NAME: dialogue" first
         full_text = p.get_text()
-        # Match leading ALLCAPS speaker name followed by a colon
         m = re.match(r"^\s*([A-Z][A-Z0-9 ]{0,50})\s*:\s*", full_text)
-        if not m:
-            continue
+        if m:
+            speaker = m.group(1).strip()
 
-        speaker = m.group(1).strip()
+            inner_html = p.decode_contents()
+            prefix_pattern = r"^\s*" + re.escape(speaker) + r"\s*:\s*[\t ]*"
+            dialogue_html, n_subs = re.subn(prefix_pattern, "", inner_html, count=1)
+            if n_subs == 0:
+                # Couldn't safely strip; skip this paragraph
+                continue
 
-        # Remove the speaker prefix from the *HTML* content, not just the text
-        inner_html = p.decode_contents()
-        # Strip "  NAME   :   " + optional tabs/spaces
-        prefix_pattern = r"^\s*" + re.escape(speaker) + r"\s*:\s*[\t ]*"
-        dialogue_html, n_subs = re.subn(prefix_pattern, "", inner_html, count=1)
-        if n_subs == 0:
-            # Couldn't safely strip; skip this paragraph
-            continue
+        else:
+            # Try screenplay-style: <strong>NAME</strong> (optional parenthetical) <br/> dialogue...
+            inner_html = p.decode_contents()
+            m2 = re.match(
+                r"^\s*(<strong>.*?</strong>[^<]*?)<br\s*/?>\s*(.*)$",
+                inner_html,
+                flags=re.DOTALL,
+            )
+            if not m2:
+                continue
 
-        # Clear the paragraph and rebuild
+            speaker_html = m2.group(1)
+            dialogue_html = m2.group(2)
+
+            # Extract raw speaker text (including any parenthetical) then clean it
+            speaker_raw = BeautifulSoup(speaker_html, "html.parser").get_text().strip()
+            if not speaker_raw:
+                continue
+            speaker = clean_screenplay_speaker(speaker_raw)
+
+        # At this point we have `speaker` and `dialogue_html` for either case.
+        # Clear the paragraph and rebuild.
         p.clear()
 
-        # Remove margin-left from inline style, keep other style properties
+        # Remove left/right margins from inline style, keep other properties
         if p.has_attr("style"):
             parts = [part.strip() for part in p["style"].split(";") if part.strip()]
-            parts = [part for part in parts if not part.lower().startswith("margin-left")]
+            parts = [
+                part
+                for part in parts
+                if not part.lower().startswith("margin-left")
+                and not part.lower().startswith("margin-right")
+            ]
             if parts:
                 p["style"] = "; ".join(parts)
             else:
@@ -2023,7 +2046,7 @@ def transform_script_layout(html: str) -> str:
 
         # Speaker span
         speaker_span = soup.new_tag("span", attrs={"class": "script-speaker"})
-        speaker_span.string = speaker + ":"
+        speaker_span.string = speaker
         p.append(speaker_span)
         p.append(" ")
 
