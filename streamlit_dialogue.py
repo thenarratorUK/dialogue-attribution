@@ -212,6 +212,52 @@ def build_csv_from_docx_json_and_quotes():
     """
     import os, json, re, io, csv
 
+    # If we're in Script mode, build the CSV directly from quotes.txt
+    if st.session_state.get("content_type", "Book") == "Script":
+        quotes_lines = st.session_state.get("quotes_lines") or []
+        canonical_map = st.session_state.get("canonical_map") or {}
+
+        # Parse each quotes.txt line: "123. Speaker: Dialogue"
+        pattern = re.compile(r"^\s*([0-9]+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*(?:[“\"])?(.+?)(?:[”\"])?\s*$")
+
+        rows: list[tuple[str, str]] = []
+
+        for raw_line in quotes_lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            m = pattern.match(line)
+            if not m:
+                continue
+            _, speaker_raw, quote = m.groups()
+            effective = smart_title(speaker_raw)
+            norm = normalize_speaker_name(effective)
+            canonical = canonical_map.get(norm, effective)
+            text_part = quote.strip()
+            if not text_part:
+                continue
+            rows.append((canonical, text_part))
+
+        # Build CSV: same filename pattern as the book workflow
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(["Speaker", "Line", "FileName"])
+
+        def normalise_speaker_name_local(s: str) -> str:
+            if s and s.strip().lower() == "error":
+                return "Narration"
+            return s
+
+        for idx, (speaker, line) in enumerate(rows, start=1):
+            speaker_clean = normalise_speaker_name_local(speaker)
+            line_clean = normalize_text(line)
+            num = f"{idx:05d}"
+            safe_speaker = re.sub(r"\s+", "", speaker_clean) or "Narration"
+            filename = f"{num}_{safe_speaker}_TakeX"
+            writer.writerow([speaker_clean, line_clean, filename])
+
+        return buf.getvalue().encode("utf-8")
+
     # Ensure the JSON is up to date for the current DOCX
     write_paragraph_json_for_session()
     json_path = st.session_state.get("d_json_path")
@@ -799,6 +845,9 @@ if "userkey" not in st.session_state:
 if "step" not in st.session_state:
     st.session_state.step = 0
 
+if "content_type" not in st.session_state:
+    st.session_state.content_type = "Book"
+
 # ========= STEP 0: User Identification =========
 
 if st.session_state.step == 0:
@@ -850,6 +899,15 @@ if st.session_state.step == 0:
     fontsel = chosen_label
 
     st.session_state.fontsel = fontsel
+
+    # Content type selection: Book vs Script
+    content_type = st.radio(
+        "Content type:",
+        options=["Book", "Script"],
+        index=0 if st.session_state.get("content_type", "Book") == "Book" else 1,
+        horizontal=True,
+    )
+    st.session_state.content_type = content_type
 
     # Existing user key input
     user_input = st.text_input(
@@ -923,7 +981,8 @@ def auto_save():
         "console_log": st.session_state.get("console_log", []),
         "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
-        "existing_speaker_colors": st.session_state.get("existing_speaker_colors")
+        "existing_speaker_colors": st.session_state.get("existing_speaker_colors"),
+        "content_type": st.session_state.get("content_type", "Book")
     }
     if "docx_bytes" in st.session_state and st.session_state.docx_bytes is not None:
         data["docx_bytes"] = base64.b64encode(st.session_state.docx_bytes).decode("utf-8")
@@ -1191,6 +1250,192 @@ def extract_italic_spans(paragraph):
             spans.append(((start, end), joined))
 
     return spans
+
+def is_all_caps_name(s: str) -> bool:
+    """
+    True if all alphabetic characters in s are uppercase and there is at least one letter.
+    Punctuation, digits and spaces are ignored for the check.
+    """
+    letters = [c for c in s if c.isalpha()]
+    return bool(letters) and all(c.isupper() for c in letters)
+
+
+def parse_docx_script(docx_path: str):
+    """
+    Parse a DOCX script and return a list of {"speaker": ..., "text": ...} using three patterns:
+
+      1) Name: Dialogue
+         - First colon splits name vs dialogue.
+         - Name may be any case.
+         - Left side must *look* like a name (<= 4 words, each word with letters starts uppercase).
+         - Right side must contain at least one 'dialogue-like' word:
+             * has any lowercase letters, or
+             * is a single-letter uppercase word (I, A, etc).
+
+      2) NAME Dialogue
+         - No colon.
+         - First token is ALL CAPS (NAME).
+         - If the char immediately after NAME is a TAB:
+             * any non-empty remainder counts as dialogue (all caps allowed).
+         - If it is a SPACE (or other non-tab whitespace):
+             * look only at the FIRST word after NAME:
+               - dialogue only if that word has lowercase letters, or
+               - is a single-letter uppercase word (I, A, etc).
+             * If not, this line is NOT a dialogue line (e.g. MUSIC TRANSITION).
+
+      3) NAME
+         Dialogue
+         - Whole line is ALL CAPS → speaker cue.
+         - Following non-blank lines that are not new cues become dialogue until a blank or new cue.
+
+    One DOCX paragraph is treated as one line.
+    """
+    import docx
+
+    doc = docx.Document(docx_path)
+    lines = [p.text.rstrip("\n") for p in doc.paragraphs]
+
+    results = []
+    current_speaker = None
+    current_lines = []
+
+    def flush():
+        nonlocal current_speaker, current_lines
+        if current_speaker and current_lines:
+            text = " ".join(t.strip() for t in current_lines if t.strip())
+            if text:
+                results.append({"speaker": current_speaker.strip(), "text": text})
+        current_speaker = None
+        current_lines = []
+
+    def has_letters(w: str) -> bool:
+        return any(c.isalpha() for c in w)
+
+    def dialogue_word_anywhere(word: str) -> bool:
+        """
+        'Dialogue-like' word:
+          - has any lowercase letters; OR
+          - is a single-letter uppercase word (I, A, etc).
+        """
+        alpha = [c for c in word if c.isalpha()]
+        if not alpha:
+            return False
+        if any(c.islower() for c in alpha):
+            return True
+        return len(alpha) == 1 and alpha[0].isupper()
+
+    for raw in lines:
+        line = raw.rstrip("\r\n")
+        s = line.strip()
+
+        # Blank line ends current block
+        if not s:
+            flush()
+            continue
+
+        # ---------- Pattern 1: Name: Dialogue ----------
+        if ":" in s:
+            before, after = s.split(":", 1)
+            name_part = before.strip()
+            rest = after.lstrip()
+
+            if name_part and rest:
+                name_tokens = name_part.split()
+                # "Looks like a name" = 1–4 tokens, each token with letters starts uppercase
+                name_tokens_with_letters = [t for t in name_tokens if has_letters(t)]
+                looks_like_name = (
+                    len(name_tokens_with_letters) > 0
+                    and len(name_tokens) <= 4
+                    and all(t[0].isupper() for t in name_tokens_with_letters)
+                )
+
+                words_rest = rest.split()
+                dialogue_exists = any(dialogue_word_anywhere(w) for w in words_rest)
+
+                if looks_like_name and dialogue_exists:
+                    flush()
+                    current_speaker = name_part
+                    current_lines = [rest]
+                    continue
+
+            # Not a cue; maybe continuation text
+            if current_speaker:
+                current_lines.append(s)
+            continue
+
+        # ---------- No colon: patterns 2 and 3 ----------
+
+        line_stripped = s
+        tokens = line_stripped.split()
+
+        if tokens:
+            first_tok = tokens[0]
+
+            # Pattern 2: NAME Dialogue (no colon, first token ALL CAPS)
+            if is_all_caps_name(first_tok):
+                # Character immediately after NAME in the stripped line
+                delim_char = line_stripped[len(first_tok)] if len(line_stripped) > len(first_tok) else " "
+                rest_str = line_stripped[len(first_tok):].lstrip()
+
+                if rest_str:
+                    if delim_char == "\t":
+                        # NAME<TAB>Dialogue: allow all caps dialogue
+                        flush()
+                        current_speaker = first_tok
+                        current_lines = [rest_str]
+                        continue
+                    else:
+                        # NAME<space>Dialogue: check FIRST word only
+                        rest_words = rest_str.split()
+                        first_rest_word = rest_words[0] if rest_words else ""
+                        if first_rest_word and dialogue_word_anywhere(first_rest_word):
+                            flush()
+                            current_speaker = first_tok
+                            current_lines = [rest_str]
+                            continue
+                # If there's no remainder or it doesn't look like dialogue,
+                # fall through to possible Pattern 3 (NAME alone) / continuation.
+
+        # Pattern 3: NAME on its own line
+        if is_all_caps_name(s):
+            flush()
+            current_speaker = s
+            continue
+
+        # Continuation of current speaker
+        if current_speaker:
+            current_lines.append(s)
+        # Else: stage directions / SFX / headings are ignored
+
+    flush()
+    return results
+
+
+def extract_dialogue_from_docx_script(docx_path: str):
+    """
+    Use parse_docx_script and return a list of numbered lines in the same logical
+    format as quotes.txt:
+
+        "1. Speaker: Dialogue"
+
+    Speaker names are normalised with smart_title, dialogue text is left as-is.
+    """
+    pairs = parse_docx_script(docx_path)
+    lines = []
+    line_number = 1
+    for pair in pairs:
+        raw_speaker = (pair.get("speaker") or "").strip()
+        text = (pair.get("text") or "").strip()
+        if not raw_speaker or not text:
+            continue
+
+        speaker = smart_title(raw_speaker)  # JOHN HOLMES -> John Holmes, etc.
+        lines.append(f"{line_number}. {speaker}: {text}")
+        line_number += 1
+
+    return lines
+
+
 def extract_dialogue_from_docx(book_name, docx_path):
     # Helpers: italics-path check for quote enclosure (compare-only, no text mutation)
     import re as _re_local
@@ -1551,6 +1796,80 @@ def apply_manual_indentation_with_markers(original_docx, html):
                     tag["style"] = style_str
     return str(soup)
 
+def transform_script_layout(html: str) -> str:
+    """
+    Post-process the HTML produced by Mammoth + highlighting so that
+    script dialogue lines are rendered as:
+
+        <p class="script-line">
+          <span class="script-speaker">NAME:</span>
+          <span class="script-dialogue">...dialogue (with highlights)...</span>
+        </p>
+
+    We only transform <p> elements that:
+      - contain at least one <span class="highlight"> (i.e. actual dialogue), and
+      - start with something like 'NAME:' in ALL CAPS.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    for p in soup.find_all("p"):
+        # Only touch paragraphs that contain highlighted dialogue
+        if not p.find("span", class_="highlight"):
+            continue
+
+        full_text = p.get_text()
+        # Match leading ALLCAPS speaker name followed by a colon
+        m = re.match(r"^\s*([A-Z][A-Z0-9 ]{0,50})\s*:\s*", full_text)
+        if not m:
+            continue
+
+        speaker = m.group(1).strip()
+
+        # Remove the speaker prefix from the *HTML* content, not just the text
+        inner_html = p.decode_contents()
+        # Strip "  NAME   :   " + optional tabs/spaces
+        prefix_pattern = r"^\s*" + re.escape(speaker) + r"\s*:\s*[\t ]*"
+        dialogue_html, n_subs = re.subn(prefix_pattern, "", inner_html, count=1)
+        if n_subs == 0:
+            # Couldn't safely strip; skip this paragraph
+            continue
+
+        # Clear the paragraph and rebuild
+        p.clear()
+
+        # Remove margin-left from inline style, keep other style properties
+        if p.has_attr("style"):
+            parts = [part.strip() for part in p["style"].split(";") if part.strip()]
+            parts = [part for part in parts if not part.lower().startswith("margin-left")]
+            if parts:
+                p["style"] = "; ".join(parts)
+            else:
+                del p["style"]
+
+        # Add a class for styling
+        existing_classes = p.get("class", [])
+        if "script-line" not in existing_classes:
+            existing_classes.append("script-line")
+        if existing_classes:
+            p["class"] = existing_classes
+
+        # Speaker span
+        speaker_span = soup.new_tag("span", attrs={"class": "script-speaker"})
+        speaker_span.string = speaker + ":"
+        p.append(speaker_span)
+        p.append(" ")
+
+        # Dialogue span – preserve existing highlight spans etc.
+        dialogue_span = soup.new_tag("span", attrs={"class": "script-dialogue"})
+        frag = BeautifulSoup(dialogue_html, "html.parser")
+        for child in frag.contents:
+            dialogue_span.append(child)
+        p.append(dialogue_span)
+
+    return str(soup)
+
+
+# -------------------------
 # ---------------------------
 # Summary & Ranking Functions
 # ---------------------------
@@ -1719,7 +2038,10 @@ if st.session_state.step == 1:
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
                     st.session_state.console_log = []
-                    st.session_state.step = 2
+                    if st.session_state.get("content_type", "Book") == "Script":
+                        st.session_state.step = 3
+                    else:
+                        st.session_state.step = 2
                     # Ensure frequent-speaker buttons are initialised from quotes before entering Step 2
                     try:
                         if st.session_state.get("quotes_lines"):
@@ -1753,7 +2075,10 @@ if st.session_state.step == 1:
                     auto_save()
                     st.rerun()
             else:
-                dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
+                if st.session_state.get("content_type", "Book") == "Script":
+                    dialogue_list = extract_dialogue_from_docx_script(st.session_state.docx_path)
+                else:
+                    dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
                 st.session_state.quotes_lines = [line + "\n" for line in dialogue_list]
                 st.session_state.docx_only = True
                 st.success("Quotes extracted from DOCX.")
@@ -1766,7 +2091,10 @@ if st.session_state.step == 1:
                     st.session_state.docx_only = False
                     st.session_state.unknown_index = 0
                     st.session_state.console_log = []
-                    st.session_state.step = 2
+                    if st.session_state.get("content_type", "Book") == "Script":
+                        st.session_state.step = 3
+                    else:
+                        st.session_state.step = 2
                     # Ensure frequent-speaker buttons are initialised from quotes before entering Step 2
                     try:
                         if st.session_state.get("quotes_lines"):
@@ -1853,7 +2181,10 @@ if st.session_state.step == 1:
                 if st.session_state.docx_only:
                     st.session_state.step = 1
                 else:
-                    st.session_state.step = 2
+                    if st.session_state.get("content_type", "Book") == "Script":
+                        st.session_state.step = 3
+                    else:
+                        st.session_state.step = 2
                     # Ensure frequent-speaker buttons are initialised from quotes before entering Step 2
                     try:
                         if st.session_state.get("quotes_lines"):
@@ -2213,6 +2544,8 @@ elif st.session_state.step == 4:
     quotes_list = load_quotes(quotes_file_path, st.session_state.canonical_map)
     highlighted_html = highlight_dialogue_in_html(html, quotes_list, st.session_state.speaker_colors)
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
+    if st.session_state.get("content_type", "Book") == "Script":
+        final_html_body = transform_script_layout(final_html_body)
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
     ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
     first_lines_html = generate_first_lines_html(quotes_list, list(st.session_state.canonical_map.values()))
@@ -2242,6 +2575,22 @@ elif st.session_state.step == 4:
       box-decoration-break: clone;
       -webkit-box-decoration-break: clone;
     }}
+
+    /* Script layout */
+    p.script-line {{
+      margin-left: 0;
+      text-indent: 0;
+      display: grid;
+      grid-template-columns: 9em 1fr;  /* fixed speaker column width */
+      column-gap: 0.75em;
+    }}
+    .script-speaker {{
+      font-weight: bold;
+    }}
+    .script-dialogue {{
+      /* dialogue automatically takes remaining space in the second column */
+    }}
+
   </style>
 </head>
 <body>
