@@ -239,7 +239,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append((canonical, text_part))
 
         # Build CSV: same filename pattern as the book workflow
-        buf = io.StringIO()
+        buf = io.StringIO(newline="")
         writer = csv.writer(buf)
         writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -256,7 +256,7 @@ def build_csv_from_docx_json_and_quotes():
             filename = f"{num}_{safe_speaker}_TakeX"
             writer.writerow([speaker_clean, line_clean, filename])
 
-        return buf.getvalue().encode("utf-8")
+        return buf.getvalue().encode("utf-8-sig")
 
     # Ensure the JSON is up to date for the current DOCX
     write_paragraph_json_for_session()
@@ -364,7 +364,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append(("Narration", plain))
 
     # =============== BUILD CSV WITH FILENAME COLUMN ===============
-    buf = io.StringIO()
+    buf = io.StringIO(newline="")
     writer = csv.writer(buf)
     writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -383,7 +383,7 @@ def build_csv_from_docx_json_and_quotes():
 
         writer.writerow([speaker_clean, line_clean, filename])
 
-    return buf.getvalue().encode("utf-8")
+    return buf.getvalue().encode("utf-8-sig")
 
 def trim_paragraph_cache_before_previous(previous_html: str):
     try:
