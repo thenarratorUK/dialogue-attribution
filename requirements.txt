@@ -3,3 +3,4 @@ python-docx
 mammoth
 beautifulsoup4
 lxml
+weasyprint
