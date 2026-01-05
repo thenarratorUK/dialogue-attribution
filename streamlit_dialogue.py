@@ -14,6 +14,24 @@ from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
 import html
 
+
+# -----------------------------
+# PDF export (HTML -> PDF)
+# -----------------------------
+@st.cache_data(show_spinner=False)
+def render_html_to_pdf_bytes(html_str: str, base_url: str) -> bytes:
+    """Render an HTML string to a PDF (bytes).
+
+    This uses WeasyPrint if available. The extra CSS forces print colour fidelity so
+    background colours are preserved in the resulting PDF.
+    """
+    from weasyprint import HTML, CSS  # type: ignore
+    extra_css = CSS(string="""
+        * { print-color-adjust: exact; }
+        @page { size: A4; margin: 18mm; }
+    """)
+    return HTML(string=html_str, base_url=base_url).write_pdf(stylesheets=[extra_css])
+
 def encode_font_base64(path: str) -> str:
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
@@ -239,7 +257,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append((canonical, text_part))
 
         # Build CSV: same filename pattern as the book workflow
-        buf = io.StringIO(newline="")
+        buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -256,7 +274,7 @@ def build_csv_from_docx_json_and_quotes():
             filename = f"{num}_{safe_speaker}_TakeX"
             writer.writerow([speaker_clean, line_clean, filename])
 
-        return buf.getvalue().encode("utf-8-sig")
+        return buf.getvalue().encode("utf-8")
 
     # Ensure the JSON is up to date for the current DOCX
     write_paragraph_json_for_session()
@@ -364,7 +382,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append(("Narration", plain))
 
     # =============== BUILD CSV WITH FILENAME COLUMN ===============
-    buf = io.StringIO(newline="")
+    buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -383,7 +401,7 @@ def build_csv_from_docx_json_and_quotes():
 
         writer.writerow([speaker_clean, line_clean, filename])
 
-    return buf.getvalue().encode("utf-8-sig")
+    return buf.getvalue().encode("utf-8")
 
 def trim_paragraph_cache_before_previous(previous_html: str):
     try:
@@ -2607,6 +2625,25 @@ elif st.session_state.step == 4:
         html_bytes = f.read()
     st.download_button("Download HTML File", html_bytes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}.html", mime="text/html")
+    # --- PDF export (optional) ---
+    pdf_file_name = f"{st.session_state.userkey}-{st.session_state.book_name}.pdf"
+    pdf_bytes: bytes | None = None
+    pdf_error: str | None = None
+    try:
+        pdf_bytes = render_html_to_pdf_bytes(final_html, base_url=os.path.dirname(final_html_path))
+    except Exception as e:
+        pdf_error = str(e)
+
+    if pdf_bytes is not None:
+        st.download_button("Download PDF File", pdf_bytes,
+                           file_name=pdf_file_name, mime="application/pdf")
+    else:
+        st.download_button("Download PDF File", b"",
+                           file_name=pdf_file_name, mime="application/pdf", disabled=True)
+        st.caption("PDF export is unavailable in this environment. "
+                   "Install WeasyPrint (plus its system dependencies) to enable it. "
+                   f"Details: {pdf_error}")
+
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4, ensure_ascii=False).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
                        file_name=f"{st.session_state.userkey}-speaker_colors.json", mime="application/json")
