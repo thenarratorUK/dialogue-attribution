@@ -1653,7 +1653,6 @@ def extract_dialogue_from_docx(book_name, docx_path):
         for _, seg in items:
             seg_clean = (seg or "").strip()
             if seg_clean:
-                seg_clean = (line_number or '').strip()
                 if seg_clean:
                     dialogue_list.append(f"{line_number}. Unknown: {seg_clean}")
                     line_number += 1
