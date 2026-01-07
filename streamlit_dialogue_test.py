@@ -1307,6 +1307,15 @@ def extract_italic_spans(paragraph):
                 if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw[shift:], next_text=next_text):
                     start = block_start + shift
                     end = start + max(0, len(raw) - shift)
+                                        # If this is a single-word speaker label across DOCX runs, ensure we output the colon.
+                    if is_single_titlecase_speaker_label(raw[shift:], next_text=next_text):
+                        label = raw[shift:].replace('\u00A0',' ').strip()
+                        # If the colon isn't part of the italic run, it will be in next_text (e.g. ': ').
+                        if not label.endswith(':') and str(next_text).startswith(':'):
+                            label = label + ':'
+                        joined = label
+                    else:
+                        joined = joined.strip()
                     spans.append(((start, end), joined))
                 block_start = None
                 block_raw = []
@@ -1326,8 +1335,6 @@ def extract_italic_spans(paragraph):
             spans.append(((start, end), joined))
 
     return spans
-
-
 
 def is_all_caps_name(s: str) -> bool:
     """
@@ -1644,7 +1651,14 @@ def extract_dialogue_from_docx(book_name, docx_path):
         items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
-            dialogue_list.append(f"{line_number}. Unknown: {seg}")
+            seg_clean = (seg or "").strip()
+            if seg_clean:
+                dialogue_list.append(f"{line_number}. Unknown: {seg_clean}")
+    
+                continue
+            # If the segment is empty after stripping, skip it
+            line_number += 1
+            continue
             line_number += 1
     output_path = f"{st.session_state.userkey}-{book_name}-quotes.txt"
     with open(output_path, "w", encoding="utf-8") as f:
@@ -1654,6 +1668,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
 # ---------------------------
 # DOCX-to-HTML & Marking Functions
 # ---------------------------
+
 def prepend_marker_to_paragraph(paragraph, marker_text):
     p = paragraph._p
     r = OxmlElement("w:r")
