@@ -19,48 +19,58 @@ import html
 # PDF export (HTML -> PDF)
 # -----------------------------
 @st.cache_data(show_spinner=False)
-def is_single_titlecase_speaker_label(label_text, next_char=""):
-    """True for a single-word Titlecase label immediately followed by ':' and then whitespace.
+def is_single_titlecase_speaker_label(label_text, next_text=""):
+    """True for a single-word Titlecase speaker label followed by ':' and then whitespace.
+
+    Handles DOCX run boundaries where the colon/space may be in a separate run with different styling.
 
     Matches:
-      'Pixel:' + next_char=' '
-      'Pixel:' + next_char='\t'
-      'Pixel: ' (space included in label_text)
-      'Friedrich:' + next_char=' '
+      label_text='Pixel'      next_text=': '   -> True
+      label_text='Pixel:'     next_text=' '    -> True
+      label_text='Pixel: '    next_text=''     -> True
+      label_text='Friedrich'  next_text=':\t' -> True
 
     Does NOT match:
-      '12:34' (digits)
-      'pixel:' (lowercase)
-      'PIXEL:' (all caps)
+      '12:34'
+      'pixel'
+      'PIXEL'
     """
     if label_text is None:
         return False
 
     s = str(label_text)
 
-    # Normalise common space-like characters inside the label text.
-    s = s.replace("\u00A0", " ").replace("\u202F", " ").replace("\u2009", " ").replace("\u200A", " ").replace("\u200B", "")
+    def norm_ws(x: str) -> str:
+        return (x or "").replace("\u00A0", " ").replace("\u202F", " ").replace("\u2009", " ").replace("\u200A", " ").replace("\u200B", "")
 
-    next_c = "" if next_char is None else str(next_char)
-    # Treat NBSP as whitespace for next_char too
-    if next_c == "\u00A0":
-        next_c = " "
+    s = norm_ws(s)
+    nxt = norm_ws("" if next_text is None else str(next_text))
 
-    # Whitespace after colon may be inside the same italic run or in the next run (next_char).
-    has_ws_after_colon = s.endswith(": ") or s.endswith(":\t") or (s.endswith(":") and next_c[:1].isspace())
-    if not has_ws_after_colon:
+    has_colon_and_ws = (
+        s.endswith(": ") or
+        s.endswith(":\t") or
+        (s.endswith(":") and (nxt[:1].isspace() or nxt.startswith(" ")))
+    )
+
+    has_name_then_colon_ws_in_next = (
+        nxt.startswith(":") and len(nxt) >= 2 and nxt[1].isspace()
+    )
+
+    if has_colon_and_ws:
+        core = s.rstrip()
+        if not core.endswith(":"):
+            return False
+        name = core[:-1]
+    elif has_name_then_colon_ws_in_next:
+        name = s.rstrip()
+    else:
         return False
 
-    core = s.rstrip()  # remove trailing whitespace
-    if not core.endswith(":"):
-        return False
-
-    name = core[:-1]  # remove colon
-    # Single word: First letter uppercase, rest lowercase, letters only.
     if not re.fullmatch(r"[A-Z][a-z]+", name or ""):
         return False
 
     return True
+
 
 def render_html_to_pdf_bytes(html_str: str, base_url: str) -> bytes:
     """Render an HTML string to a PDF (bytes).
@@ -1254,7 +1264,7 @@ def extract_italicized_text(paragraph):
             joined = smart_join(current_block)
             joined = _trim_quote_edges(joined)
             raw_block = "".join(current_block)
-            if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw_block, next_char=""):
+            if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw_block, next_text=""):
                 italic_blocks.append(joined)
             current_block = []
     # flush tail
@@ -1262,7 +1272,7 @@ def extract_italicized_text(paragraph):
     joined = _trim_quote_edges(joined)
     joined = re.sub(r'^\.\s+(?=\w)', '', joined)
     raw_block = "".join(current_block)
-    if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw_block, next_char=""):
+    if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw_block, next_text=""):
         italic_blocks.append(joined)
     return italic_blocks
 
@@ -1294,7 +1304,7 @@ def extract_italic_spans(paragraph):
                     shift = 2
                     joined = joined[2:]
                 next_char = paragraph.text[block_start + len(raw):block_start + len(raw) + 1] if (block_start + len(raw)) < len(paragraph.text) else ''
-                if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw[shift:], next_char=next_char):
+                if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw[shift:], next_text=next_char):
                     start = block_start + shift
                     end = start + max(0, len(raw) - shift)
                     spans.append(((start, end), joined))
@@ -1309,8 +1319,8 @@ def extract_italic_spans(paragraph):
         if re.match(r'^\.\s+(?=\w)', joined):
             shift = 2
             joined = joined[2:]
-        next_char = paragraph.text[block_start + len(raw):block_start + len(raw) + 1] if (block_start + len(raw)) < len(paragraph.text) else ''
-        if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw[shift:], next_char=next_char):
+        next_text = paragraph.text[block_start + len(raw):block_start + len(raw) + 2] if (block_start + len(raw)) < len(paragraph.text) else ''
+        if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw[shift:], next_text=next_text):
             start = block_start + shift
             end = start + max(0, len(raw) - shift)
             spans.append(((start, end), joined))
