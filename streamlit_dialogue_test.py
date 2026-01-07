@@ -14,24 +14,6 @@ from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
 import html
 
-
-# -----------------------------
-# PDF export (HTML -> PDF)
-# -----------------------------
-@st.cache_data(show_spinner=False)
-def render_html_to_pdf_bytes(html_str: str, base_url: str) -> bytes:
-    """Render an HTML string to a PDF (bytes).
-
-    This uses WeasyPrint if available. The extra CSS forces print colour fidelity so
-    background colours are preserved in the resulting PDF.
-    """
-    from weasyprint import HTML, CSS  # type: ignore
-    extra_css = CSS(string="""
-        * { print-color-adjust: exact; }
-        @page { size: A4; margin: 18mm; }
-    """)
-    return HTML(string=html_str, base_url=base_url).write_pdf(stylesheets=[extra_css])
-
 def encode_font_base64(path: str) -> str:
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
@@ -257,7 +239,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append((canonical, text_part))
 
         # Build CSV: same filename pattern as the book workflow
-        buf = io.StringIO()
+        buf = io.StringIO(newline="")
         writer = csv.writer(buf)
         writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -274,7 +256,7 @@ def build_csv_from_docx_json_and_quotes():
             filename = f"{num}_{safe_speaker}_TakeX"
             writer.writerow([speaker_clean, line_clean, filename])
 
-        return buf.getvalue().encode("utf-8")
+        return buf.getvalue().encode("utf-8-sig")
 
     # Ensure the JSON is up to date for the current DOCX
     write_paragraph_json_for_session()
@@ -382,7 +364,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append(("Narration", plain))
 
     # =============== BUILD CSV WITH FILENAME COLUMN ===============
-    buf = io.StringIO()
+    buf = io.StringIO(newline="")
     writer = csv.writer(buf)
     writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -401,7 +383,7 @@ def build_csv_from_docx_json_and_quotes():
 
         writer.writerow([speaker_clean, line_clean, filename])
 
-    return buf.getvalue().encode("utf-8")
+    return buf.getvalue().encode("utf-8-sig")
 
 def trim_paragraph_cache_before_previous(previous_html: str):
     try:
@@ -960,15 +942,7 @@ def normalize_text(text):
     return text.strip()
 
 def match_normalize(text):
-    # Normalisations that preserve string length, so indices remain stable.
-    # (Avoid deleting characters here; highlight logic relies on indices.)
-    return (
-        text
-        .replace("\u00a0", " ")
-        .replace("’", "'").replace("‘", "'")
-        .replace("“", '"').replace("”", '"')
-    )
-
+    return text.replace("’", "'").replace("‘", "'")
 
 def normalize_speaker_name(name):
     # Replace typographic apostrophes with straight ones, remove periods, lowercase, and trim.
@@ -1198,30 +1172,6 @@ def effective_run_italic(run, paragraph):
         pass
     return base
 
-def effective_run_bold(run, paragraph):
-    """Return True if, after cascading styles, this run is bold.
-    Precedence (lowest to highest): paragraph style -> run character style -> direct run formatting.
-    Explicit False overrides inherited True.
-    """
-    base = False
-    try:
-        # Paragraph style
-        psty = getattr(paragraph, "style", None)
-        if psty is not None and getattr(psty.font, "bold", None) is True:
-            base = True
-        # Character style on run
-        rsty = getattr(run, "style", None)
-        rsty_bold = getattr(getattr(rsty, "font", None), "bold", None)
-        if rsty_bold is not None:
-            base = bool(rsty_bold)
-        # Direct run formatting
-        rfmt_bold = getattr(getattr(run, "font", None), "bold", None)
-        if rfmt_bold is not None:
-            base = bool(rfmt_bold)
-    except Exception:
-        pass
-    return base
-
 
 def extract_italicized_text(paragraph):
     """
@@ -1298,72 +1248,6 @@ def extract_italic_spans(paragraph):
             start = block_start + shift
             end = start + max(0, len(raw) - shift)
             spans.append(((start, end), joined))
-
-    return spans
-
-def extract_bold_spans(paragraph):
-    """
-    Return a list of ((start, end), text) for contiguous bold blocks in this paragraph,
-    using the same cascade logic as extract_italic_spans.
-
-    Acceptance rules:
-      - include if the bold block has >=2 whitespace-delimited tokens; OR
-      - include if the bold block ends with ':' and the pre-colon cue contains at least one letter
-        (e.g. 'Pixel:' or 'Tim, JUST FUCKING TIM:').
-    """
-    spans = []
-    pos = 0
-    block_start = None
-    block_raw = []
-
-    def _is_cue_with_colon(s: str) -> bool:
-        t = (s or "").strip()
-        if not t.endswith(":"):
-            return False
-        core = t[:-1].strip()
-        if not core:
-            return False
-        if not any(c.isalpha() for c in core):
-            return False
-        # Keep it reasonably short to avoid swallowing whole headings accidentally.
-        if len(core.split()) > 6:
-            return False
-        return True
-
-    for run in paragraph.runs:
-        t = run.text or ""
-        n = len(t)
-        if effective_run_bold(run, paragraph):
-            if block_start is None:
-                block_start = pos
-            block_raw.append(t)
-        else:
-            if block_start is not None:
-                raw = "".join(block_raw)
-                joined = smart_join(block_raw)
-                shift = 0
-                if re.match(r'^\.\s+(?=\w)', joined):
-                    shift = 2
-                    joined = joined[2:]
-                if len(joined.split()) >= 2 or _is_cue_with_colon(joined):
-                    start = block_start + shift
-                    end = start + max(0, len(raw) - shift)
-                    spans.append(((start, end), joined.strip()))
-                block_start = None
-                block_raw = []
-        pos += n
-
-    if block_start is not None:
-        raw = "".join(block_raw)
-        joined = smart_join(block_raw)
-        shift = 0
-        if re.match(r'^\.\s+(?=\w)', joined):
-            shift = 2
-            joined = joined[2:]
-        if len(joined.split()) >= 2 or _is_cue_with_colon(joined):
-            start = block_start + shift
-            end = start + max(0, len(raw) - shift)
-            spans.append(((start, end), joined.strip()))
 
     return spans
 
@@ -1673,21 +1557,9 @@ def extract_dialogue_from_docx(book_name, docx_path):
             s, e = inner_span
             return any(os <= s and e <= oe for (os, oe) in outer_spans)
 
-        italic_spans = list(extract_italic_spans(para))
-        italic_span_ranges = [sp for sp, _ in italic_spans]
-
-        for span, seg in italic_spans:
+        for span, seg in extract_italic_spans(para):
             # Skip italics that lie anywhere inside any quoted span in this paragraph
             if _inside_any(span, quote_spans):
-                continue
-            items.append((span, seg))
-
-        for span, seg in extract_bold_spans(para):
-            # Skip bold blocks that lie anywhere inside any quoted span in this paragraph
-            if _inside_any(span, quote_spans):
-                continue
-            # Avoid duplicates when the same text is both bold and italic
-            if _inside_any(span, italic_span_ranges):
                 continue
             items.append((span, seg))
 
@@ -1848,64 +1720,35 @@ def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset
             running_index += text_length
     return match_end
 
-def generate_quote_variants(quote_raw: str, quote_stripped: str, had_outer_quotes: bool):
-    # Prefer matching WITH outer quotes (when they exist) to avoid false positives
-    # where the same word(s) appear outside quotation marks.
-    variants = []
-
-    if had_outer_quotes and quote_raw:
-        variants.append(quote_raw)
-
-    if quote_stripped:
-        variants.append(quote_stripped)
-
-    def add_variant(v: str):
-        v = v.replace("\u00a0", " ")
-        yield v
-
-        # Curly/straight quote normalisations
-        yield v.replace("“", '"').replace("”", '"').replace("’", "'").replace("‘", "'")
-
-        # Ellipsis variants (DOCX conversion can flip between … and ...)
-        if "…" in v:
-            yield v.replace("…", "...")
-        if "..." in v:
-            yield v.replace("...", "…")
-
-        # Dash variants (en/em dash vs hyphen)
-        if "–" in v or "—" in v:
-            yield v.replace("–", "-").replace("—", "-")
-        if "-" in v:
-            yield v.replace("-", "–")
-
-    expanded = []
-    for base in variants:
-        for v in add_variant(base):
-            if v:
-                expanded.append(v)
-
-    # De-duplicate while preserving order (use match_normalize as key)
-    seen = set()
-    out = []
-    for v in expanded:
-        key = match_normalize(v)
-        if key not in seen:
-            seen.add(key)
-            out.append(v)
-    return out
-
-
-def highlight_dialogue_in_html(html, quotes_list):
+def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
     soup = BeautifulSoup(html, "html.parser")
-    speaker_colors = st.session_state.get("speaker_colors", {})
     candidate_info = build_candidate_info(soup)
     unmatched_quotes = []
     last_global_offset = 0
 
+    # Prefer matches that are bounded by quote marks in the HTML text (e.g., “Anyway,”),
+    # to avoid accidental substring matches earlier in the document (e.g., “Anyway, the …”).
+    QUOTE_CHARS = set(['"', "“", "”", "„", "‟", "«", "»", "‹", "›", "'", "‘", "’", "‚", "‛"])
+
+    def find_bounded_pos(full_text: str, full_text_norm_lower: str, needle_lower: str, start_pos: int) -> int:
+        pos = full_text_norm_lower.find(needle_lower, start_pos)
+        while pos != -1:
+            before = full_text[pos - 1] if pos > 0 else ""
+            after_i = pos + len(needle_lower)
+            after = full_text[after_i] if after_i < len(full_text) else ""
+            if before in QUOTE_CHARS and after in QUOTE_CHARS:
+                return pos
+            pos = full_text_norm_lower.find(needle_lower, pos + 1)
+        return -1
+
     for quote_data in quotes_list:
+        expected_quote = quote_data["quote"].strip('“”"')
+        expected_quote_lower = match_normalize(expected_quote).lower()
+
         speaker = quote_data["speaker"]
         norm_speaker = normalize_speaker_name(speaker)
-        color_choice = speaker_colors.get(norm_speaker, "none")
+
+        color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
         if norm_speaker == "unknown":
             color_choice = "none"
 
@@ -1915,16 +1758,9 @@ def highlight_dialogue_in_html(html, quotes_list):
         else:
             highlight_style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
 
-        quote_raw = quote_data.get("quote_raw", "") or ""
-        quote_stripped = quote_data.get("quote", "") or ""
-        had_outer_quotes = bool(quote_data.get("had_outer_quotes", False))
-
-        variants = generate_quote_variants(quote_raw, quote_stripped, had_outer_quotes)
-        variants_norm = [(v, match_normalize(v).lower()) for v in variants]
-
         matched = False
 
-        # Pass 1: respect document order via last_global_offset
+        # Phase 1: Search forwards from the last match, preferring bounded (quoted) occurrences.
         for candidate, start, end, text in candidate_info:
             if end < last_global_offset:
                 continue
@@ -1932,46 +1768,51 @@ def highlight_dialogue_in_html(html, quotes_list):
             local_start = last_global_offset - start if last_global_offset > start else 0
             candidate_text_norm = match_normalize(text).lower()
 
-            for v, v_norm in variants_norm:
-                if v_norm and candidate_text_norm.find(v_norm, local_start) != -1:
-                    match_end_local = highlight_in_candidate(candidate, v, highlight_style, soup, local_start)
+            # Prefer a match where the quote text is immediately surrounded by quote marks.
+            pos_bounded = find_bounded_pos(text, candidate_text_norm, expected_quote_lower, local_start)
+            if pos_bounded != -1:
+                match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos_bounded)
+                if match_end_local is not None:
+                    last_global_offset = start + match_end_local
+                    matched = True
+                    break
+
+            # Fallback: unbounded substring match (previous behaviour).
+            pos = candidate_text_norm.find(expected_quote_lower, local_start)
+            if pos != -1:
+                match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, local_start)
+                if match_end_local is not None:
+                    last_global_offset = start + match_end_local
+                    matched = True
+                    break
+
+        # Phase 2: Only if we failed to find a forward match, restart from the top of the document.
+        # IMPORTANT: when we restart, we must also allow last_global_offset to move backwards, otherwise
+        # subsequent matches can incorrectly bind to earlier occurrences.
+        if not matched:
+            for candidate, start, end, text in candidate_info:
+                candidate_text_norm = match_normalize(text).lower()
+
+                pos_bounded = find_bounded_pos(text, candidate_text_norm, expected_quote_lower, 0)
+                if pos_bounded != -1:
+                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos_bounded)
                     if match_end_local is not None:
                         last_global_offset = start + match_end_local
                         matched = True
                         break
 
-            if matched:
-                break
-
-        # Pass 2: fallback - search entire doc if ordering search failed
-        if not matched:
-            for candidate, start, end, text in candidate_info:
-                candidate_text_norm = match_normalize(text).lower()
-
-                for v, v_norm in variants_norm:
-                    if v_norm and candidate_text_norm.find(v_norm) != -1:
-                        match_end_local = highlight_in_candidate(candidate, v, highlight_style, soup, 0)
-                        if match_end_local is not None:
-                            if start + match_end_local > last_global_offset:
-                                last_global_offset = start + match_end_local
-                            matched = True
-                            break
-
-                if matched:
-                    break
+                pos = candidate_text_norm.find(expected_quote_lower)
+                if pos != -1:
+                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, 0)
+                    if match_end_local is not None:
+                        last_global_offset = start + match_end_local
+                        matched = True
+                        break
 
         if not matched:
-            display_quote = quote_raw if quote_raw else quote_stripped
-            unmatched_quotes.append(f'{speaker}: "{display_quote}" [Index: {quote_data.get("index")}]')
+            unmatched_quotes.append(quote_data)
 
-    if unmatched_quotes:
-        unmatched_quotes_filename = get_unmatched_quotes_filename()
-        with open(unmatched_quotes_filename, "w", encoding="utf-8") as f:
-            f.write("\n".join(unmatched_quotes))
-        st.write(f"⚠️ Unmatched quotes saved to '[userkey]-unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
-
-    return str(soup)
-
+    return str(soup), unmatched_quotes
 
 def apply_manual_indentation_with_markers(original_docx, html):
     indented_paras = get_manual_indentation(original_docx)
@@ -2182,42 +2023,21 @@ def get_canonical_speakers(quotes_file):
 
 def load_quotes(quotes_file, canonical_map):
     quotes_list = []
-    # Keep the quote text as written (including outer quotes if present).
-    pattern = re.compile(r"^\s*([0-9]+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*(.+?)\s*$")
+    pattern = re.compile(r"^\s*([0-9]+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*(?:[“\"])?(.+?)(?:[”\"])?\s*$")
     with open(quotes_file, "r", encoding="utf-8") as f:
         for line in f:
-            m = pattern.match(line.strip())
-            if not m:
-                continue
-
-            index, speaker_raw, quote_raw = m.groups()
-            quote_raw = quote_raw.strip()
-
-            outer_open = {'“', '"', '‘', "'"}
-            outer_close = {'”', '"', '’', "'"}
-            had_outer_quotes = (
-                len(quote_raw) >= 2
-                and quote_raw[0] in outer_open
-                and quote_raw[-1] in outer_close
-            )
-
-            quote_stripped = quote_raw
-            if had_outer_quotes:
-                quote_stripped = quote_raw[1:-1].strip()
-
-            effective = smart_title(speaker_raw)
-            norm = normalize_speaker_name(effective)
-            canonical = canonical_map.get(norm, effective)
-
-            quotes_list.append({
-                "index": index,
-                "speaker": canonical,
-                "quote": quote_stripped,
-                "quote_raw": quote_raw,
-                "had_outer_quotes": had_outer_quotes,
-            })
+            match = pattern.match(line.strip())
+            if match:
+                index, speaker_raw, quote = match.groups()
+                effective = smart_title(speaker_raw)
+                norm = normalize_speaker_name(effective)
+                canonical = canonical_map.get(norm, effective)
+                quotes_list.append({
+                    "index": index,
+                    "speaker": canonical,
+                    "quote": quote.strip()
+                })
     return quotes_list
-
 
 def load_existing_colors():
   if os.path.exists(get_saved_colors_file()):
@@ -2765,7 +2585,7 @@ elif st.session_state.step == 4:
     html = convert_docx_to_html_mammoth(marker_docx_path)
     os.remove(marker_docx_path)
     quotes_list = load_quotes(quotes_file_path, st.session_state.canonical_map)
-    highlighted_html = highlight_dialogue_in_html(html, quotes_list)
+    highlighted_html = highlight_dialogue_in_html(html, quotes_list, st.session_state.speaker_colors)
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
     if st.session_state.get("content_type", "Book") == "Script":
         final_html_body = transform_script_layout(final_html_body)
@@ -2830,25 +2650,6 @@ elif st.session_state.step == 4:
         html_bytes = f.read()
     st.download_button("Download HTML File", html_bytes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}.html", mime="text/html")
-    # --- PDF export (optional) ---
-    pdf_file_name = f"{st.session_state.userkey}-{st.session_state.book_name}.pdf"
-    pdf_bytes: bytes | None = None
-    pdf_error: str | None = None
-    try:
-        pdf_bytes = render_html_to_pdf_bytes(final_html, base_url=os.path.dirname(final_html_path))
-    except Exception as e:
-        pdf_error = str(e)
-
-    if pdf_bytes is not None:
-        st.download_button("Download PDF File", pdf_bytes,
-                           file_name=pdf_file_name, mime="application/pdf")
-    else:
-        st.download_button("Download PDF File", b"",
-                           file_name=pdf_file_name, mime="application/pdf", disabled=True)
-        st.caption("PDF export is unavailable in this environment. "
-                   "Install WeasyPrint (plus its system dependencies) to enable it. "
-                   f"Details: {pdf_error}")
-
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4, ensure_ascii=False).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
                        file_name=f"{st.session_state.userkey}-speaker_colors.json", mime="application/json")
