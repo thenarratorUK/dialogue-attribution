@@ -1833,11 +1833,17 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
         if (not matched) and quote_plain:
             matched = search_and_highlight_from_global(quote_plain, 0)
 
-        # Stage 4: if still not found, mark as unmatched
+        # Stage 4: if still not found, mark as unmatched (and keep prior behaviour: save to file)
         if not matched:
-            unmatched_quotes.append(quote_data)
+            unmatched_quotes.append(f"{quote_data.get('speaker','')}: \"{quote_data.get('quote','')}\" [Index: {quote_data.get('index','')}]")
 
-    return str(soup), unmatched_quotes
+    if unmatched_quotes:
+        unmatched_quotes_filename = get_unmatched_quotes_filename()
+        with open(unmatched_quotes_filename, "w", encoding="utf-8") as f:
+            f.write("\n".join(unmatched_quotes))
+        st.write(f"⚠️ Unmatched quotes saved to '[userkey]-unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
+
+    return str(soup)
 
 def apply_manual_indentation_with_markers(original_docx, html):
     indented_paras = get_manual_indentation(original_docx)
