@@ -960,15 +960,12 @@ def normalize_text(text):
     return text.strip()
 
 def match_normalize(text):
-    # Length-preserving normalisation for matching in the HTML highlighter.
-    # Keep this conservative: do not collapse whitespace or remove characters,
-    # otherwise global offsets can drift.
+    # Length-preserving normalisation used only for matching (keeps offsets stable)
     return (
         text.replace("\u00A0", " ")
             .replace("’", "'").replace("‘", "'")
             .replace("“", '"').replace("”", '"')
     )
-
 
 def normalize_speaker_name(name):
     # Replace typographic apostrophes with straight ones, remove periods, lowercase, and trim.
@@ -1751,111 +1748,67 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
     candidate_info = build_candidate_info(soup)
     unmatched_quotes = []
     last_global_offset = 0
-
     for quote_data in quotes_list:
-        expected_quote = quote_data["quote"].strip('“”"')
-        expected_quote_norm = match_normalize(expected_quote)
-        expected_quote_lower = expected_quote_norm.lower()
-
-        # Prefer matching the quoted form first (straight or curly in source -> normalised to straight here)
-        quoted_variants = [
-            f'"{expected_quote}"',
-            f"'{expected_quote}'",
-        ]
-        quoted_variants_lower = [match_normalize(q).lower() for q in quoted_variants]
-
-        speaker = quote_data["speaker"]
+        expected_quote = quote_data['quote'].strip('“”"')
+        expected_quote_lower = match_normalize(expected_quote).lower()
+        raw_quote = quote_data.get('raw_quote', '')
+        had_outer_quotes = bool(quote_data.get('had_outer_quotes'))
+        raw_quote_lower = match_normalize(raw_quote).lower() if raw_quote else ''
+        speaker = quote_data['speaker']
         norm_speaker = normalize_speaker_name(speaker)
-
         color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
         if norm_speaker == "unknown":
             color_choice = "none"
-
         rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
         if color_choice == "none":
             highlight_style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
         else:
             highlight_style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-
         matched = False
-
-        # Pass 1: forward search from last_global_offset
         for candidate, start, end, text in candidate_info:
             if end < last_global_offset:
                 continue
-
             local_start = last_global_offset - start if last_global_offset > start else 0
             candidate_text_norm = match_normalize(text).lower()
-
-            # 1) Try quoted variants first
-            best_pos = None
-            best_inner_start = None
-
-            for ql in quoted_variants_lower:
-                p = candidate_text_norm.find(ql, local_start)
-                if p != -1 and (best_pos is None or p < best_pos):
-                    best_pos = p
-                    best_inner_start = p + 1  # inside the opening quote
-
-            if best_pos is not None and best_inner_start is not None:
-                match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, best_inner_start)
-                if match_end_local is not None:
-                    last_global_offset = start + best_inner_start + len(expected_quote)
-                    matched = True
-                    break
-
-            # 2) Fallback: unquoted match (existing behaviour)
             pos = candidate_text_norm.find(expected_quote_lower, local_start)
             if pos != -1:
-                match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos)
+                match_end_local = highlight_in_candidate(candidate, quote_data['quote'], highlight_style, soup, local_start)
                 if match_end_local is not None:
-                    last_global_offset = start + pos + len(expected_quote)
+                    last_global_offset = start + match_end_local
                     matched = True
                     break
-
-        # Pass 2: full scan fallback
         if not matched:
-            for candidate, start, end, text in candidate_info:
-                candidate_text_norm = match_normalize(text).lower()
-
-                best_pos = None
-                best_inner_start = None
-                for ql in quoted_variants_lower:
-                    p = candidate_text_norm.find(ql, 0)
-                    if p != -1 and (best_pos is None or p < best_pos):
-                        best_pos = p
-                        best_inner_start = p + 1
-
-                if best_pos is not None and best_inner_start is not None:
-                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, best_inner_start)
-                    if match_end_local is not None:
-                        end_pos = start + best_inner_start + len(expected_quote)
-                    if end_pos > last_global_offset:
-                        last_global_offset = end_pos
-                        matched = True
-                        break
-
-                pos = candidate_text_norm.find(expected_quote_lower)
-                if pos != -1:
-                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos)
-                    if match_end_local is not None:
-                        end_pos = start + pos + len(expected_quote)
-                    if end_pos > last_global_offset:
-                        last_global_offset = end_pos
-                        matched = True
-                        break
-
+            if had_outer_quotes and raw_quote_lower:
+                for candidate, start, end, text in candidate_info:
+                    candidate_text_norm = match_normalize(text).lower()
+                    pos_raw = candidate_text_norm.find(raw_quote_lower)
+                    if pos_raw != -1:
+                        # Highlight only the inner quote text (start just after the opening quote).
+                        match_end_local = highlight_in_candidate(candidate, quote_data['quote'], highlight_style, soup, pos_raw + 1)
+                        if match_end_local is not None:
+                            if start + match_end_local > last_global_offset:
+                                last_global_offset = start + match_end_local
+                            matched = True
+                            break
+            if not matched:
+                for candidate, start, end, text in candidate_info:
+                    candidate_text_norm = match_normalize(text).lower()
+                    pos = candidate_text_norm.find(expected_quote_lower)
+                    if pos != -1:
+                        match_end_local = highlight_in_candidate(candidate, quote_data['quote'], highlight_style, soup, 0)
+                        if match_end_local is not None:
+                            if start + match_end_local > last_global_offset:
+                                last_global_offset = start + match_end_local
+                            matched = True
+                            break
         if not matched:
-            unmatched_quotes.append(f'{quote_data["speaker"]}: "{quote_data["quote"]}" [Index: {quote_data["index"]}]')
-
+            unmatched_quotes.append(f"{quote_data['speaker']}: \"{quote_data['quote']}\" [Index: {quote_data['index']}]")
     if unmatched_quotes:
         unmatched_quotes_filename = get_unmatched_quotes_filename()
         with open(unmatched_quotes_filename, "w", encoding="utf-8") as f:
             f.write("\n".join(unmatched_quotes))
         st.write(f"⚠️ Unmatched quotes saved to '[userkey]-unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
-
     return str(soup)
-
 
 def apply_manual_indentation_with_markers(original_docx, html):
     indented_paras = get_manual_indentation(original_docx)
@@ -2066,20 +2019,39 @@ def get_canonical_speakers(quotes_file):
 
 def load_quotes(quotes_file, canonical_map):
     quotes_list = []
-    pattern = re.compile(r"^\s*([0-9]+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*(?:[“\"])?(.+?)(?:[”\"])?\s*$")
+    # Capture optional opening/closing quote characters so we can optionally prefer a quoted-match fallback.
+    pattern = re.compile(
+        r"^\s*([0-9]+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*(?:(?P<open>[“\"']))?(?P<body>.+?)(?:(?P<close>[”\"']))?\s*$"
+    )
+
     with open(quotes_file, "r", encoding="utf-8") as f:
         for line in f:
             match = pattern.match(line.strip())
-            if match:
-                index, speaker_raw, quote = match.groups()
-                effective = smart_title(speaker_raw)
-                norm = normalize_speaker_name(effective)
-                canonical = canonical_map.get(norm, effective)
-                quotes_list.append({
-                    "index": index,
-                    "speaker": canonical,
-                    "quote": quote.strip()
-                })
+            if not match:
+                continue
+
+            index = match.group(1)
+            speaker_raw = match.group(2)
+            open_q = match.group("open") or ""
+            close_q = match.group("close") or ""
+            body = (match.group("body") or "").strip()
+
+            raw_quote = f"{open_q}{body}{close_q}".strip()
+            had_outer_quotes = bool(open_q) and bool(close_q)
+            inner_quote = body if had_outer_quotes else raw_quote
+
+            effective = smart_title(speaker_raw)
+            norm = normalize_speaker_name(effective)
+            canonical = canonical_map.get(norm, effective)
+
+            quotes_list.append({
+                "index": index,
+                "speaker": canonical,
+                "quote": inner_quote.strip(),
+                "raw_quote": raw_quote,
+                "had_outer_quotes": had_outer_quotes
+            })
+
     return quotes_list
 
 def load_existing_colors():
