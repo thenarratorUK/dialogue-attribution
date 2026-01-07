@@ -14,6 +14,24 @@ from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
 import html
 
+
+# -----------------------------
+# PDF export (HTML -> PDF)
+# -----------------------------
+@st.cache_data(show_spinner=False)
+def render_html_to_pdf_bytes(html_str: str, base_url: str) -> bytes:
+    """Render an HTML string to a PDF (bytes).
+
+    This uses WeasyPrint if available. The extra CSS forces print colour fidelity so
+    background colours are preserved in the resulting PDF.
+    """
+    from weasyprint import HTML, CSS  # type: ignore
+    extra_css = CSS(string="""
+        * { print-color-adjust: exact; }
+        @page { size: A4; margin: 18mm; }
+    """)
+    return HTML(string=html_str, base_url=base_url).write_pdf(stylesheets=[extra_css])
+
 def encode_font_base64(path: str) -> str:
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
@@ -239,7 +257,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append((canonical, text_part))
 
         # Build CSV: same filename pattern as the book workflow
-        buf = io.StringIO(newline="")
+        buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -256,7 +274,7 @@ def build_csv_from_docx_json_and_quotes():
             filename = f"{num}_{safe_speaker}_TakeX"
             writer.writerow([speaker_clean, line_clean, filename])
 
-        return buf.getvalue().encode("utf-8-sig")
+        return buf.getvalue().encode("utf-8")
 
     # Ensure the JSON is up to date for the current DOCX
     write_paragraph_json_for_session()
@@ -364,7 +382,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append(("Narration", plain))
 
     # =============== BUILD CSV WITH FILENAME COLUMN ===============
-    buf = io.StringIO(newline="")
+    buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -383,7 +401,7 @@ def build_csv_from_docx_json_and_quotes():
 
         writer.writerow([speaker_clean, line_clean, filename])
 
-    return buf.getvalue().encode("utf-8-sig")
+    return buf.getvalue().encode("utf-8")
 
 def trim_paragraph_cache_before_previous(previous_html: str):
     try:
@@ -942,7 +960,15 @@ def normalize_text(text):
     return text.strip()
 
 def match_normalize(text):
-    return text.replace("’", "'").replace("‘", "'")
+    # Length-preserving normalisation for matching in the HTML highlighter.
+    # Keep this conservative: do not collapse whitespace or remove characters,
+    # otherwise global offsets can drift.
+    return (
+        text.replace("\u00A0", " ")
+            .replace("’", "'").replace("‘", "'")
+            .replace("“", '"').replace("”", '"')
+    )
+
 
 def normalize_speaker_name(name):
     # Replace typographic apostrophes with straight ones, remove periods, lowercase, and trim.
@@ -1726,24 +1752,17 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
     unmatched_quotes = []
     last_global_offset = 0
 
-    # Prefer matches that are bounded by quote marks in the HTML text (e.g., “Anyway,”),
-    # to avoid accidental substring matches earlier in the document (e.g., “Anyway, the …”).
-    QUOTE_CHARS = set(['"', "“", "”", "„", "‟", "«", "»", "‹", "›", "'", "‘", "’", "‚", "‛"])
-
-    def find_bounded_pos(full_text: str, full_text_norm_lower: str, needle_lower: str, start_pos: int) -> int:
-        pos = full_text_norm_lower.find(needle_lower, start_pos)
-        while pos != -1:
-            before = full_text[pos - 1] if pos > 0 else ""
-            after_i = pos + len(needle_lower)
-            after = full_text[after_i] if after_i < len(full_text) else ""
-            if before in QUOTE_CHARS and after in QUOTE_CHARS:
-                return pos
-            pos = full_text_norm_lower.find(needle_lower, pos + 1)
-        return -1
-
     for quote_data in quotes_list:
         expected_quote = quote_data["quote"].strip('“”"')
-        expected_quote_lower = match_normalize(expected_quote).lower()
+        expected_quote_norm = match_normalize(expected_quote)
+        expected_quote_lower = expected_quote_norm.lower()
+
+        # Prefer matching the quoted form first (straight or curly in source -> normalised to straight here)
+        quoted_variants = [
+            f'"{expected_quote}"',
+            f"'{expected_quote}'",
+        ]
+        quoted_variants_lower = [match_normalize(q).lower() for q in quoted_variants]
 
         speaker = quote_data["speaker"]
         norm_speaker = normalize_speaker_name(speaker)
@@ -1760,7 +1779,7 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
 
         matched = False
 
-        # Phase 1: Search forwards from the last match, preferring bounded (quoted) occurrences.
+        # Pass 1: forward search from last_global_offset
         for candidate, start, end, text in candidate_info:
             if end < last_global_offset:
                 continue
@@ -1768,51 +1787,73 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
             local_start = last_global_offset - start if last_global_offset > start else 0
             candidate_text_norm = match_normalize(text).lower()
 
-            # Prefer a match where the quote text is immediately surrounded by quote marks.
-            pos_bounded = find_bounded_pos(text, candidate_text_norm, expected_quote_lower, local_start)
-            if pos_bounded != -1:
-                match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos_bounded)
+            # 1) Try quoted variants first
+            best_pos = None
+            best_inner_start = None
+
+            for ql in quoted_variants_lower:
+                p = candidate_text_norm.find(ql, local_start)
+                if p != -1 and (best_pos is None or p < best_pos):
+                    best_pos = p
+                    best_inner_start = p + 1  # inside the opening quote
+
+            if best_pos is not None and best_inner_start is not None:
+                match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, best_inner_start)
                 if match_end_local is not None:
                     last_global_offset = start + match_end_local
                     matched = True
                     break
 
-            # Fallback: unbounded substring match (previous behaviour).
+            # 2) Fallback: unquoted match (existing behaviour)
             pos = candidate_text_norm.find(expected_quote_lower, local_start)
             if pos != -1:
-                match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, local_start)
+                match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos)
                 if match_end_local is not None:
                     last_global_offset = start + match_end_local
                     matched = True
                     break
 
-        # Phase 2: Only if we failed to find a forward match, restart from the top of the document.
-        # IMPORTANT: when we restart, we must also allow last_global_offset to move backwards, otherwise
-        # subsequent matches can incorrectly bind to earlier occurrences.
+        # Pass 2: full scan fallback
         if not matched:
             for candidate, start, end, text in candidate_info:
                 candidate_text_norm = match_normalize(text).lower()
 
-                pos_bounded = find_bounded_pos(text, candidate_text_norm, expected_quote_lower, 0)
-                if pos_bounded != -1:
-                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos_bounded)
+                best_pos = None
+                best_inner_start = None
+                for ql in quoted_variants_lower:
+                    p = candidate_text_norm.find(ql, 0)
+                    if p != -1 and (best_pos is None or p < best_pos):
+                        best_pos = p
+                        best_inner_start = p + 1
+
+                if best_pos is not None and best_inner_start is not None:
+                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, best_inner_start)
                     if match_end_local is not None:
-                        last_global_offset = start + match_end_local
+                        if start + match_end_local > last_global_offset:
+                            last_global_offset = start + match_end_local
                         matched = True
                         break
 
                 pos = candidate_text_norm.find(expected_quote_lower)
                 if pos != -1:
-                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, 0)
+                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos)
                     if match_end_local is not None:
-                        last_global_offset = start + match_end_local
+                        if start + match_end_local > last_global_offset:
+                            last_global_offset = start + match_end_local
                         matched = True
                         break
 
         if not matched:
-            unmatched_quotes.append(quote_data)
+            unmatched_quotes.append(f'{quote_data["speaker"]}: "{quote_data["quote"]}" [Index: {quote_data["index"]}]')
 
-    return str(soup), unmatched_quotes
+    if unmatched_quotes:
+        unmatched_quotes_filename = get_unmatched_quotes_filename()
+        with open(unmatched_quotes_filename, "w", encoding="utf-8") as f:
+            f.write("\n".join(unmatched_quotes))
+        st.write(f"⚠️ Unmatched quotes saved to '[userkey]-unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
+
+    return str(soup)
+
 
 def apply_manual_indentation_with_markers(original_docx, html):
     indented_paras = get_manual_indentation(original_docx)
@@ -2650,6 +2691,25 @@ elif st.session_state.step == 4:
         html_bytes = f.read()
     st.download_button("Download HTML File", html_bytes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}.html", mime="text/html")
+    # --- PDF export (optional) ---
+    pdf_file_name = f"{st.session_state.userkey}-{st.session_state.book_name}.pdf"
+    pdf_bytes: bytes | None = None
+    pdf_error: str | None = None
+    try:
+        pdf_bytes = render_html_to_pdf_bytes(final_html, base_url=os.path.dirname(final_html_path))
+    except Exception as e:
+        pdf_error = str(e)
+
+    if pdf_bytes is not None:
+        st.download_button("Download PDF File", pdf_bytes,
+                           file_name=pdf_file_name, mime="application/pdf")
+    else:
+        st.download_button("Download PDF File", b"",
+                           file_name=pdf_file_name, mime="application/pdf", disabled=True)
+        st.caption("PDF export is unavailable in this environment. "
+                   "Install WeasyPrint (plus its system dependencies) to enable it. "
+                   f"Details: {pdf_error}")
+
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4, ensure_ascii=False).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
                        file_name=f"{st.session_state.userkey}-speaker_colors.json", mime="application/json")
