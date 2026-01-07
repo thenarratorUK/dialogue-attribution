@@ -1895,8 +1895,9 @@ def generate_quote_variants(quote_raw: str, quote_stripped: str, had_outer_quote
     return out
 
 
-def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
+def highlight_dialogue_in_html(html, quotes_list):
     soup = BeautifulSoup(html, "html.parser")
+    speaker_colors = st.session_state.get("speaker_colors", {})
     candidate_info = build_candidate_info(soup)
     unmatched_quotes = []
     last_global_offset = 0
@@ -1905,8 +1906,7 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
         speaker = quote_data["speaker"]
         norm_speaker = normalize_speaker_name(speaker)
 
-        # IMPORTANT: use the supplied mapping, not st.session_state
-        color_choice = speaker_colors.get(norm_speaker, "none")
+                color_choice = speaker_colors.get(norm_speaker, "none")
         if norm_speaker == "unknown":
             color_choice = "none"
 
@@ -2766,7 +2766,7 @@ elif st.session_state.step == 4:
     html = convert_docx_to_html_mammoth(marker_docx_path)
     os.remove(marker_docx_path)
     quotes_list = load_quotes(quotes_file_path, st.session_state.canonical_map)
-    highlighted_html = highlight_dialogue_in_html(html, quotes_list, st.session_state.speaker_colors)
+    highlighted_html = highlight_dialogue_in_html(html, quotes_list)
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
     if st.session_state.get("content_type", "Book") == "Script":
         final_html_body = transform_script_layout(final_html_body)
