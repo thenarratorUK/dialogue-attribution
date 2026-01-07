@@ -1303,8 +1303,8 @@ def extract_italic_spans(paragraph):
                 if re.match(r'^\.\s+(?=\w)', joined):
                     shift = 2
                     joined = joined[2:]
-                next_char = paragraph.text[block_start + len(raw):block_start + len(raw) + 1] if (block_start + len(raw)) < len(paragraph.text) else ''
-                if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw[shift:], next_text=next_char):
+                next_text = paragraph.text[block_start + len(raw):block_start + len(raw) + 2] if (block_start + len(raw)) < len(paragraph.text) else ''
+                if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw[shift:], next_text=next_text):
                     start = block_start + shift
                     end = start + max(0, len(raw) - shift)
                     spans.append(((start, end), joined))
@@ -1326,6 +1326,8 @@ def extract_italic_spans(paragraph):
             spans.append(((start, end), joined))
 
     return spans
+
+
 
 def is_all_caps_name(s: str) -> bool:
     """
