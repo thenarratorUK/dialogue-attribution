@@ -960,14 +960,7 @@ def normalize_text(text):
     return text.strip()
 
 def match_normalize(text):
-    # Length-preserving normalisation used only for matching (keeps offsets stable)
-    if text is None:
-        return ""
-    return (
-        text.replace("\u00A0", " ")
-            .replace("’", "'").replace("‘", "'")
-            .replace("“", "\"").replace("”", "\"")
-    )
+    return text.replace("’", "'").replace("‘", "'")
 
 def normalize_speaker_name(name):
     # Replace typographic apostrophes with straight ones, remove periods, lowercase, and trim.
@@ -1712,9 +1705,9 @@ def build_candidate_info(soup):
 
 def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset=0):
     full_text = candidate.get_text()
-    full_text_lower = match_normalize(full_text).lower()
-    quote_lower = match_normalize(quote).lower()
-    pos = full_text_lower.find(quote_lower, start_offset)
+    full_text_norm = match_normalize(full_text)
+    quote_norm = match_normalize(quote)
+    pos = full_text_norm.find(quote_norm, start_offset)
     if pos == -1:
         return None
     match_end = pos + len(quote)
@@ -1745,251 +1738,59 @@ def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset
             running_index += text_length
     return match_end
 
-def _has_bold_ancestor(text_node):
-    """Return True if the text node is inside bold formatting (<strong>/<b> or font-weight: bold)."""
-    try:
-        for parent in text_node.parents:
-            if not isinstance(parent, Tag):
-                continue
-            if parent.name in ("strong", "b"):
-                return True
-            style = (parent.get("style") or "").lower()
-            if "font-weight" in style and ("bold" in style or "700" in style or "800" in style or "900" in style):
-                return True
-        return False
-    except Exception:
-        return False
-
-
-def _is_inside_existing_highlight(text_node):
-    """Return True if the text node is already inside a highlight span (or a span with background styling)."""
-    try:
-        for parent in text_node.parents:
-            if not isinstance(parent, Tag):
-                continue
-            if parent.name != "span":
-                continue
-            classes = parent.get("class") or []
-            if isinstance(classes, str):
-                classes = [classes]
-            if any(c.lower() == "highlight" for c in classes):
-                return True
-            style = (parent.get("style") or "").lower()
-            if "background-color" in style or "background:" in style:
-                return True
-        return False
-    except Exception:
-        return False
-
-
-def _is_eligible_bold_unhighlighted_text_node(text_node):
-    """Eligible for the second pass: bold text only, and not already inside a highlight span."""
-    if text_node is None or not isinstance(text_node, NavigableString):
-        return False
-    if not str(text_node).strip():
-        return False
-    if not _has_bold_ancestor(text_node):
-        return False
-    if _is_inside_existing_highlight(text_node):
-        return False
-    return True
-
-
-def _wrap_match_in_text_node(text_node, start_idx, end_idx, highlight_style, soup):
-    """Wrap a substring of a NavigableString with a highlight span. Returns True on success."""
-    if text_node is None or text_node.parent is None:
-        return False
-
-    original = str(text_node)
-    if start_idx < 0 or end_idx > len(original) or start_idx >= end_idx:
-        return False
-
-    before = original[:start_idx]
-    match_text = original[start_idx:end_idx]
-    after = original[end_idx:]
-
-    new_nodes = []
-    if before:
-        new_nodes.append(NavigableString(before))
-
-    span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
-    span_tag.string = match_text
-    new_nodes.append(span_tag)
-
-    if after:
-        new_nodes.append(NavigableString(after))
-
-    # Replace the node with the first new node, then insert the rest after it.
-    text_node.replace_with(new_nodes[0])
-    current = new_nodes[0]
-    for extra in new_nodes[1:]:
-        current.insert_after(extra)
-        current = extra
-
-    return True
-
-
-def second_pass_highlight_unmatched_bold(soup, unmatched_quote_datas):
-    """
-    Second matching pass (forward-search only, no fallback):
-    - Operates only on quotes that were unmatched in the first pass.
-    - Matches only inside bold text nodes.
-    - Matches only where the text node is not already inside a highlight span.
-    """
-    eligible_nodes = list(soup.find_all(string=True))
-
-    node_index = 0
-    char_offset = 0
-    still_unmatched = []
-
-    for quote_data in unmatched_quote_datas:
-        expected_quote = quote_data["quote"].strip('“”"')
-        expected_norm = match_normalize(expected_quote).lower()
-
-        speaker = quote_data["speaker"]
-        norm_speaker = normalize_speaker_name(speaker)
-        color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
-        if norm_speaker == "unknown":
-            color_choice = "none"
-
-        rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
-        if color_choice == "none":
-            highlight_style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
-        else:
-            highlight_style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-
-        matched = False
-        i = node_index
-
-        while i < len(eligible_nodes):
-            node = eligible_nodes[i]
-
-            if node is None or getattr(node, "parent", None) is None:
-                i += 1
-                char_offset = 0
-                continue
-
-            if not _is_eligible_bold_unhighlighted_text_node(node):
-                i += 1
-                char_offset = 0
-                continue
-
-            node_text = str(node)
-            node_norm = match_normalize(node_text).lower()
-            start_pos = char_offset if i == node_index else 0
-
-            pos = node_norm.find(expected_norm, start_pos)
-            if pos != -1:
-                end_pos = pos + len(expected_quote)
-                if _wrap_match_in_text_node(node, pos, end_pos, highlight_style, soup):
-                    matched = True
-                    node_index = i
-                    char_offset = end_pos
-                    break
-
-            i += 1
-            char_offset = 0
-
-        if not matched:
-            still_unmatched.append(quote_data)
-
-    return still_unmatched
-
 def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
-    # TEMP: disable the final unquoted-from-start fallback for testing.
-    # Set to True to restore the previous behaviour.
-    ALLOW_UNQUOTED_GLOBAL_FALLBACK = False
-
     soup = BeautifulSoup(html, "html.parser")
     candidate_info = build_candidate_info(soup)
-    unmatched_quote_datas = []
+    unmatched_quotes = []
     last_global_offset = 0
-
     for quote_data in quotes_list:
-        expected_quote = quote_data["quote"].strip('“”"')
-        expected_quote_lower = match_normalize(expected_quote).lower()
-
-        raw_quote = quote_data.get("raw_quote", "")
-        had_outer_quotes = bool(quote_data.get("had_outer_quotes", False))
-        raw_quote_lower = match_normalize(raw_quote).lower() if raw_quote else ""
-
-        speaker = quote_data["speaker"]
+        expected_quote = quote_data['quote'].strip('“”"')
+        expected_quote_norm = match_normalize(expected_quote)
+        speaker = quote_data['speaker']
         norm_speaker = normalize_speaker_name(speaker)
         color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
         if norm_speaker == "unknown":
             color_choice = "none"
-
         rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
         if color_choice == "none":
             highlight_style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
         else:
             highlight_style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-
         matched = False
-
-        # Pass 1: forward search from last_global_offset (existing behaviour)
         for candidate, start, end, text in candidate_info:
             if end < last_global_offset:
                 continue
-
             local_start = last_global_offset - start if last_global_offset > start else 0
-            candidate_text_norm = match_normalize(text).lower()
-
-            pos = candidate_text_norm.find(expected_quote_lower, local_start)
+            candidate_text_norm = match_normalize(text)
+            pos = candidate_text_norm.find(expected_quote_norm, local_start)
             if pos != -1:
-                match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos)
+                match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, local_start)
                 if match_end_local is not None:
                     last_global_offset = start + match_end_local
                     matched = True
                     break
-
-        # Backup plan: if forward search fails, try from start using the quote field INCLUDING outer quotes,
-        # but only when the original quotes line actually had outer quotes.
-        if not matched and had_outer_quotes and raw_quote_lower:
-            for candidate, start, end, text in candidate_info:
-                candidate_text_norm = match_normalize(text).lower()
-                pos_raw = candidate_text_norm.find(raw_quote_lower)
-                if pos_raw != -1:
-                    # Highlight the inner text, starting just inside the opening quote.
-                    inner_start = pos_raw + 1
-                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, inner_start)
-                    if match_end_local is not None:
-                        if start + match_end_local > last_global_offset:
-                            last_global_offset = start + match_end_local
-                        matched = True
-                        break
-
-        # Previous behaviour: final fallback to unquoted search from the start.
-        if not matched and ALLOW_UNQUOTED_GLOBAL_FALLBACK:
+        if not matched:
+            # Optional fallback (only if not matched):
+            candidate_text_lower = candidate_text_norm.lower()
+            expected_quote_lower = expected_quote_norm.lower()
+            pos = candidate_text_lower.find(expected_quote_lower, local_start)
             for candidate, start, end, text in candidate_info:
                 candidate_text_norm = match_normalize(text).lower()
                 pos = candidate_text_norm.find(expected_quote_lower)
                 if pos != -1:
-                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos)
+                    match_end_local = highlight_in_candidate(candidate, quote_data['quote'], highlight_style, soup, 0)
                     if match_end_local is not None:
                         if start + match_end_local > last_global_offset:
                             last_global_offset = start + match_end_local
                         matched = True
                         break
-
         if not matched:
-            unmatched_quote_datas.append(quote_data)
-
-    # Second pass: try to match remaining quotes against bold, unhighlighted text only (forward-search only).
-    if unmatched_quote_datas:
-        unmatched_quote_datas = second_pass_highlight_unmatched_bold(soup, unmatched_quote_datas)
-
-    unmatched_quotes = [
-        f'{qd["speaker"]}: "{qd["quote"]}" [Index: {qd["index"]}]'
-        for qd in unmatched_quote_datas
-    ]
-
+            unmatched_quotes.append(f"{quote_data['speaker']}: \"{quote_data['quote']}\" [Index: {quote_data['index']}]")
     if unmatched_quotes:
         unmatched_quotes_filename = get_unmatched_quotes_filename()
         with open(unmatched_quotes_filename, "w", encoding="utf-8") as f:
             f.write("\n".join(unmatched_quotes))
         st.write(f"⚠️ Unmatched quotes saved to '[userkey]-unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
-
     return str(soup)
 
 def apply_manual_indentation_with_markers(original_docx, html):
@@ -2201,46 +2002,20 @@ def get_canonical_speakers(quotes_file):
 
 def load_quotes(quotes_file, canonical_map):
     quotes_list = []
-    # Keep the full "quote field" (including optional outer quotes) for backup matching,
-    # but still store the inner quote text as 'quote' for colouring/highlighting.
-    pattern = re.compile(r"^\s*([0-9]+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*(.+?)\s*$")
-
+    pattern = re.compile(r"^\s*([0-9]+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*(?:[“\"])?(.+?)(?:[”\"])?\s*$")
     with open(quotes_file, "r", encoding="utf-8") as f:
         for line in f:
-            raw_line = line.rstrip("\n")
-            match = pattern.match(raw_line)
-            if not match:
-                continue
-
-            index, speaker_raw, quote_field = match.groups()
-            quote_field = quote_field.strip()
-
-            had_outer_quotes = False
-            raw_quote = quote_field
-
-            if len(quote_field) >= 2:
-                first = quote_field[0]
-                last = quote_field[-1]
-                if (first in ['"', "“", "”"] and last in ['"', "”", "“"]) or (first == "'" and last == "'"):
-                    had_outer_quotes = True
-                    inner_quote = quote_field[1:-1].strip()
-                else:
-                    inner_quote = quote_field.strip()
-            else:
-                inner_quote = quote_field.strip()
-
-            effective = smart_title(speaker_raw)
-            norm = normalize_speaker_name(effective)
-            canonical = canonical_map.get(norm, effective)
-
-            quotes_list.append({
-                "index": index,
-                "speaker": canonical,
-                "quote": inner_quote,
-                "raw_quote": raw_quote,
-                "had_outer_quotes": had_outer_quotes,
-            })
-
+            match = pattern.match(line.strip())
+            if match:
+                index, speaker_raw, quote = match.groups()
+                effective = smart_title(speaker_raw)
+                norm = normalize_speaker_name(effective)
+                canonical = canonical_map.get(norm, effective)
+                quotes_list.append({
+                    "index": index,
+                    "speaker": canonical,
+                    "quote": quote.strip()
+                })
     return quotes_list
 
 def load_existing_colors():
