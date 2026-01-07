@@ -14,24 +14,6 @@ from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
 import html
 
-
-# -----------------------------
-# PDF export (HTML -> PDF)
-# -----------------------------
-@st.cache_data(show_spinner=False)
-def render_html_to_pdf_bytes(html_str: str, base_url: str) -> bytes:
-    """Render an HTML string to a PDF (bytes).
-
-    This uses WeasyPrint if available. The extra CSS forces print colour fidelity so
-    background colours are preserved in the resulting PDF.
-    """
-    from weasyprint import HTML, CSS  # type: ignore
-    extra_css = CSS(string="""
-        * { print-color-adjust: exact; }
-        @page { size: A4; margin: 18mm; }
-    """)
-    return HTML(string=html_str, base_url=base_url).write_pdf(stylesheets=[extra_css])
-
 def encode_font_base64(path: str) -> str:
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
@@ -257,7 +239,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append((canonical, text_part))
 
         # Build CSV: same filename pattern as the book workflow
-        buf = io.StringIO()
+        buf = io.StringIO(newline="")
         writer = csv.writer(buf)
         writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -274,7 +256,7 @@ def build_csv_from_docx_json_and_quotes():
             filename = f"{num}_{safe_speaker}_TakeX"
             writer.writerow([speaker_clean, line_clean, filename])
 
-        return buf.getvalue().encode("utf-8")
+        return buf.getvalue().encode("utf-8-sig")
 
     # Ensure the JSON is up to date for the current DOCX
     write_paragraph_json_for_session()
@@ -382,7 +364,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append(("Narration", plain))
 
     # =============== BUILD CSV WITH FILENAME COLUMN ===============
-    buf = io.StringIO()
+    buf = io.StringIO(newline="")
     writer = csv.writer(buf)
     writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -401,7 +383,7 @@ def build_csv_from_docx_json_and_quotes():
 
         writer.writerow([speaker_clean, line_clean, filename])
 
-    return buf.getvalue().encode("utf-8")
+    return buf.getvalue().encode("utf-8-sig")
 
 def trim_paragraph_cache_before_previous(previous_html: str):
     try:
@@ -1703,14 +1685,20 @@ def build_candidate_info(soup):
         global_offset += length
     return candidate_info
 
-def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset=0):
+def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset=0, strict=False):
     full_text = candidate.get_text()
-    full_text_norm = match_normalize(full_text)
-    quote_norm = match_normalize(quote)
-    pos = full_text_norm.find(quote_norm, start_offset)
-    if pos == -1:
-        return None
-    match_end = pos + len(quote)
+    if strict:
+        pos = full_text.find(quote, start_offset)
+        if pos == -1:
+            return None
+        match_end = pos + len(quote)
+    else:
+        full_text_lower = match_normalize(full_text).lower()
+        quote_lower = match_normalize(quote).lower()
+        pos = full_text_lower.find(quote_lower, start_offset)
+        if pos == -1:
+            return None
+        match_end = pos + len(quote)
     running_index = 0
     for descendant in list(candidate.descendants):
         if isinstance(descendant, NavigableString):
@@ -1744,8 +1732,9 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
     unmatched_quotes = []
     last_global_offset = 0
     for quote_data in quotes_list:
-        expected_quote = quote_data['quote'].strip('“”"')
-        expected_quote_norm = match_normalize(expected_quote)
+        raw_quote = (quote_data.get('quote') or '').strip()
+        expected_quote = raw_quote.strip('“”"')
+        expected_quote_lower = match_normalize(expected_quote).lower()
         speaker = quote_data['speaker']
         norm_speaker = normalize_speaker_name(speaker)
         color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
@@ -1761,8 +1750,19 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
             if end < last_global_offset:
                 continue
             local_start = last_global_offset - start if last_global_offset > start else 0
-            candidate_text_norm = match_normalize(text)
-            pos = candidate_text_norm.find(expected_quote_norm, local_start)
+
+            # First pass: strict match (case-sensitive, includes quote marks)
+            pos = text.find(raw_quote, local_start) if raw_quote else -1
+            if pos != -1:
+                match_end_local = highlight_in_candidate(candidate, raw_quote, highlight_style, soup, local_start, strict=True)
+                if match_end_local is not None:
+                    last_global_offset = start + match_end_local
+                    matched = True
+                    break
+
+            # Fallback: relaxed match (case-insensitive, strips outer quotes)
+            candidate_text_norm = match_normalize(text).lower()
+            pos = candidate_text_norm.find(expected_quote_lower, local_start)
             if pos != -1:
                 match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, local_start)
                 if match_end_local is not None:
@@ -1770,15 +1770,22 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
                     matched = True
                     break
         if not matched:
-            # Optional fallback (only if not matched):
-            candidate_text_lower = candidate_text_norm.lower()
-            expected_quote_lower = expected_quote_norm.lower()
-            pos = candidate_text_lower.find(expected_quote_lower, local_start)
             for candidate, start, end, text in candidate_info:
+                # First pass: strict match (case-sensitive, includes quote marks)
+                pos = text.find(raw_quote) if raw_quote else -1
+                if pos != -1:
+                    match_end_local = highlight_in_candidate(candidate, raw_quote, highlight_style, soup, 0, strict=True)
+                    if match_end_local is not None:
+                        if start + match_end_local > last_global_offset:
+                            last_global_offset = start + match_end_local
+                        matched = True
+                        break
+
+                # Fallback: relaxed match (case-insensitive, strips outer quotes)
                 candidate_text_norm = match_normalize(text).lower()
                 pos = candidate_text_norm.find(expected_quote_lower)
                 if pos != -1:
-                    match_end_local = highlight_in_candidate(candidate, quote_data['quote'], highlight_style, soup, 0)
+                    match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, 0)
                     if match_end_local is not None:
                         if start + match_end_local > last_global_offset:
                             last_global_offset = start + match_end_local
@@ -2629,25 +2636,6 @@ elif st.session_state.step == 4:
         html_bytes = f.read()
     st.download_button("Download HTML File", html_bytes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}.html", mime="text/html")
-    # --- PDF export (optional) ---
-    pdf_file_name = f"{st.session_state.userkey}-{st.session_state.book_name}.pdf"
-    pdf_bytes: bytes | None = None
-    pdf_error: str | None = None
-    try:
-        pdf_bytes = render_html_to_pdf_bytes(final_html, base_url=os.path.dirname(final_html_path))
-    except Exception as e:
-        pdf_error = str(e)
-
-    if pdf_bytes is not None:
-        st.download_button("Download PDF File", pdf_bytes,
-                           file_name=pdf_file_name, mime="application/pdf")
-    else:
-        st.download_button("Download PDF File", b"",
-                           file_name=pdf_file_name, mime="application/pdf", disabled=True)
-        st.caption("PDF export is unavailable in this environment. "
-                   "Install WeasyPrint (plus its system dependencies) to enable it. "
-                   f"Details: {pdf_error}")
-
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4, ensure_ascii=False).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
                        file_name=f"{st.session_state.userkey}-speaker_colors.json", mime="application/json")
