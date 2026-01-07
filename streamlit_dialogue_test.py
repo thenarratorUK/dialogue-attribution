@@ -1800,7 +1800,7 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
             if best_pos is not None and best_inner_start is not None:
                 match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, best_inner_start)
                 if match_end_local is not None:
-                    last_global_offset = start + match_end_local
+                    last_global_offset = start + best_inner_start + len(expected_quote)
                     matched = True
                     break
 
@@ -1809,7 +1809,7 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
             if pos != -1:
                 match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos)
                 if match_end_local is not None:
-                    last_global_offset = start + match_end_local
+                    last_global_offset = start + pos + len(expected_quote)
                     matched = True
                     break
 
@@ -1829,8 +1829,9 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
                 if best_pos is not None and best_inner_start is not None:
                     match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, best_inner_start)
                     if match_end_local is not None:
-                        if start + match_end_local > last_global_offset:
-                            last_global_offset = start + match_end_local
+                        end_pos = start + best_inner_start + len(expected_quote)
+                    if end_pos > last_global_offset:
+                        last_global_offset = end_pos
                         matched = True
                         break
 
@@ -1838,8 +1839,9 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
                 if pos != -1:
                     match_end_local = highlight_in_candidate(candidate, expected_quote, highlight_style, soup, pos)
                     if match_end_local is not None:
-                        if start + match_end_local > last_global_offset:
-                            last_global_offset = start + match_end_local
+                        end_pos = start + pos + len(expected_quote)
+                    if end_pos > last_global_offset:
+                        last_global_offset = end_pos
                         matched = True
                         break
 
