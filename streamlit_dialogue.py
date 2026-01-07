@@ -14,6 +14,77 @@ from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
 import html
 
+
+# -----------------------------
+# PDF export (HTML -> PDF)
+# -----------------------------
+@st.cache_data(show_spinner=False)
+def is_single_titlecase_speaker_label(label_text, next_text=""):
+    """True for a single-word Titlecase speaker label followed by ':' and then whitespace.
+
+    Handles DOCX run boundaries where the colon/space may be in a separate run with different styling.
+
+    Matches:
+      label_text='Pixel'      next_text=': '   -> True
+      label_text='Pixel:'     next_text=' '    -> True
+      label_text='Pixel: '    next_text=''     -> True
+      label_text='Friedrich'  next_text=':\t' -> True
+
+    Does NOT match:
+      '12:34'
+      'pixel'
+      'PIXEL'
+    """
+    if label_text is None:
+        return False
+
+    s = str(label_text)
+
+    def norm_ws(x: str) -> str:
+        return (x or "").replace("\u00A0", " ").replace("\u202F", " ").replace("\u2009", " ").replace("\u200A", " ").replace("\u200B", "")
+
+    s = norm_ws(s)
+    nxt = norm_ws("" if next_text is None else str(next_text))
+
+    has_colon_and_ws = (
+        s.endswith(": ") or
+        s.endswith(":\t") or
+        (s.endswith(":") and (nxt[:1].isspace() or nxt.startswith(" ")))
+    )
+
+    has_name_then_colon_ws_in_next = (
+        nxt.startswith(":") and len(nxt) >= 2 and nxt[1].isspace()
+    )
+
+    if has_colon_and_ws:
+        core = s.rstrip()
+        if not core.endswith(":"):
+            return False
+        name = core[:-1]
+    elif has_name_then_colon_ws_in_next:
+        name = s.rstrip()
+    else:
+        return False
+
+    if not re.fullmatch(r"[A-Z][a-z]+", name or ""):
+        return False
+
+    return True
+
+
+def render_html_to_pdf_bytes(html_str: str, base_url: str) -> bytes:
+    """Render an HTML string to a PDF (bytes).
+
+    This uses WeasyPrint if available. The extra CSS forces print colour fidelity so
+    background colours are preserved in the resulting PDF.
+    """
+    from weasyprint import HTML, CSS  # type: ignore
+    extra_css = CSS(string="""
+        * { print-color-adjust: exact; }
+        @page { size: A4; margin: 18mm; }
+    """)
+    return HTML(string=html_str, base_url=base_url).write_pdf(stylesheets=[extra_css])
+
 def encode_font_base64(path: str) -> str:
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode("utf-8")
@@ -239,7 +310,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append((canonical, text_part))
 
         # Build CSV: same filename pattern as the book workflow
-        buf = io.StringIO(newline="")
+        buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -256,7 +327,7 @@ def build_csv_from_docx_json_and_quotes():
             filename = f"{num}_{safe_speaker}_TakeX"
             writer.writerow([speaker_clean, line_clean, filename])
 
-        return buf.getvalue().encode("utf-8-sig")
+        return buf.getvalue().encode("utf-8")
 
     # Ensure the JSON is up to date for the current DOCX
     write_paragraph_json_for_session()
@@ -364,7 +435,7 @@ def build_csv_from_docx_json_and_quotes():
             rows.append(("Narration", plain))
 
     # =============== BUILD CSV WITH FILENAME COLUMN ===============
-    buf = io.StringIO(newline="")
+    buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["Speaker", "Line", "FileName"])
 
@@ -383,7 +454,7 @@ def build_csv_from_docx_json_and_quotes():
 
         writer.writerow([speaker_clean, line_clean, filename])
 
-    return buf.getvalue().encode("utf-8-sig")
+    return buf.getvalue().encode("utf-8")
 
 def trim_paragraph_cache_before_previous(previous_html: str):
     try:
@@ -1192,16 +1263,19 @@ def extract_italicized_text(paragraph):
         else:
             joined = smart_join(current_block)
             joined = _trim_quote_edges(joined)
-            if len(joined.split()) >= 2:
+            raw_block = "".join(current_block)
+            if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw_block, next_text=""):
                 italic_blocks.append(joined)
             current_block = []
     # flush tail
     joined = smart_join(current_block)
     joined = _trim_quote_edges(joined)
     joined = re.sub(r'^\.\s+(?=\w)', '', joined)
-    if len(joined.split()) >= 2:
+    raw_block = "".join(current_block)
+    if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw_block, next_text=""):
         italic_blocks.append(joined)
     return italic_blocks
+
 def extract_italic_spans(paragraph):
     """
     Return a list of ((start, end), text) for contiguous italic blocks in this paragraph,
@@ -1229,9 +1303,19 @@ def extract_italic_spans(paragraph):
                 if re.match(r'^\.\s+(?=\w)', joined):
                     shift = 2
                     joined = joined[2:]
-                if len(joined.split()) >= 2:
+                next_text = paragraph.text[block_start + len(raw):block_start + len(raw) + 2] if (block_start + len(raw)) < len(paragraph.text) else ''
+                if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw[shift:], next_text=next_text):
                     start = block_start + shift
                     end = start + max(0, len(raw) - shift)
+                                        # If this is a single-word speaker label across DOCX runs, ensure we output the colon.
+                    if is_single_titlecase_speaker_label(raw[shift:], next_text=next_text):
+                        label = raw[shift:].replace('\u00A0',' ').strip()
+                        # If the colon isn't part of the italic run, it will be in next_text (e.g. ': ').
+                        if not label.endswith(':') and str(next_text).startswith(':'):
+                            label = label + ':'
+                        joined = label
+                    else:
+                        joined = joined.strip()
                     spans.append(((start, end), joined))
                 block_start = None
                 block_raw = []
@@ -1244,7 +1328,8 @@ def extract_italic_spans(paragraph):
         if re.match(r'^\.\s+(?=\w)', joined):
             shift = 2
             joined = joined[2:]
-        if len(joined.split()) >= 2:
+        next_text = paragraph.text[block_start + len(raw):block_start + len(raw) + 2] if (block_start + len(raw)) < len(paragraph.text) else ''
+        if len(joined.split()) >= 2 or is_single_titlecase_speaker_label(raw[shift:], next_text=next_text):
             start = block_start + shift
             end = start + max(0, len(raw) - shift)
             spans.append(((start, end), joined))
@@ -1566,7 +1651,16 @@ def extract_dialogue_from_docx(book_name, docx_path):
         items.sort(key=lambda it: (it[0][0], -(it[0][1] - it[0][0])))
 
         for _, seg in items:
-            dialogue_list.append(f"{line_number}. Unknown: {seg}")
+            seg_clean = (seg or "").strip()
+            if seg_clean:
+                if seg_clean:
+                    dialogue_list.append(f"{line_number}. Unknown: {seg_clean}")
+                    line_number += 1
+    
+                continue
+            # If the segment is empty after stripping, skip it
+            line_number += 1
+            continue
             line_number += 1
     output_path = f"{st.session_state.userkey}-{book_name}-quotes.txt"
     with open(output_path, "w", encoding="utf-8") as f:
@@ -1576,6 +1670,7 @@ def extract_dialogue_from_docx(book_name, docx_path):
 # ---------------------------
 # DOCX-to-HTML & Marking Functions
 # ---------------------------
+
 def prepend_marker_to_paragraph(paragraph, marker_text):
     p = paragraph._p
     r = OxmlElement("w:r")
@@ -1674,6 +1769,34 @@ def highlight_quote_in_parent(parent, quote, highlight_style, soup):
                 return True
     return highlight_across_nodes(parent, stripped_quote, highlight_style, soup)
 
+def find_with_boundaries(haystack, needle, start=0):
+    """Find needle in haystack from start, requiring word-boundaries when needle begins/ends with alphanumerics.
+
+    This prevents matching inside larger words (e.g. matching 'or,' inside 'for,').
+    """
+    if not needle:
+        return -1
+    need_start_boundary = needle[0].isalnum()
+    need_end_boundary = needle[-1].isalnum()
+
+    pos = haystack.find(needle, start)
+    while pos != -1:
+        before_ok = True
+        after_ok = True
+
+        if need_start_boundary:
+            before_ok = (pos == 0) or (not haystack[pos - 1].isalnum())
+        if need_end_boundary:
+            after_idx = pos + len(needle)
+            after_ok = (after_idx >= len(haystack)) or (not haystack[after_idx].isalnum())
+
+        if before_ok and after_ok:
+            return pos
+
+        pos = haystack.find(needle, pos + 1)
+
+    return -1
+
 def build_candidate_info(soup):
     candidates = soup.find_all(['p', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'])
     candidate_info = []
@@ -1685,14 +1808,16 @@ def build_candidate_info(soup):
         global_offset += length
     return candidate_info
 
-def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset=0):
+def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset=0, strict=False):
     full_text = candidate.get_text()
-    full_text_lower = match_normalize(full_text).lower()
-    quote_lower = match_normalize(quote).lower()
-    pos = full_text_lower.find(quote_lower, start_offset)
+
+    # Case-sensitive, boundary-aware search (strictness is controlled by what 'quote' is:
+    # e.g. quote_with_marks vs quote without marks).
+    pos = find_with_boundaries(full_text, quote, start_offset)
     if pos == -1:
         return None
     match_end = pos + len(quote)
+
     running_index = 0
     for descendant in list(candidate.descendants):
         if isinstance(descendant, NavigableString):
@@ -1700,9 +1825,11 @@ def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset
             text_length = len(text)
             node_start = running_index
             node_end = running_index + text_length
-            if node_end > pos and node_start < match_end:
-                overlap_start = max(pos, node_start)
-                overlap_end = min(match_end, node_end)
+
+            overlap_start = max(pos, node_start)
+            overlap_end = min(match_end, node_end)
+
+            if overlap_start < overlap_end:
                 rel_start = overlap_start - node_start
                 rel_end = overlap_end - node_start
                 before = text[:rel_start]
@@ -1717,7 +1844,9 @@ def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset
                 if after:
                     new_nodes.append(NavigableString(after))
                 descendant.replace_with(*new_nodes)
+
             running_index += text_length
+
     return match_end
 
 def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
@@ -1725,50 +1854,72 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
     candidate_info = build_candidate_info(soup)
     unmatched_quotes = []
     last_global_offset = 0
-    for quote_data in quotes_list:
-        expected_quote = quote_data['quote'].strip('“”"')
-        expected_quote_lower = match_normalize(expected_quote).lower()
-        speaker = quote_data['speaker']
+
+    def style_for_speaker(speaker):
         norm_speaker = normalize_speaker_name(speaker)
         color_choice = st.session_state.speaker_colors.get(norm_speaker, "none")
         if norm_speaker == "unknown":
             color_choice = "none"
         rgba = COLOR_PALETTE.get(color_choice, COLOR_PALETTE["none"])
         if color_choice == "none":
-            highlight_style = f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
-        else:
-            highlight_style = f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
-        matched = False
+            return f"color: rgb({rgba[0]}, {rgba[1]}, {rgba[2]}); background-color: transparent;"
+        return f"color: {rgba[4]}; background-color: rgba({rgba[0]}, {rgba[1]}, {rgba[2]}, {rgba[3]});"
+
+    def search_and_highlight_from_global(needle, start_global):
+        """Search forward from a global offset for needle (case-sensitive, boundary-aware)."""
+        nonlocal last_global_offset
+        if not needle:
+            return False
+
         for candidate, start, end, text in candidate_info:
-            if end < last_global_offset:
+            if end <= start_global:
                 continue
-            local_start = last_global_offset - start if last_global_offset > start else 0
-            candidate_text_norm = match_normalize(text).lower()
-            pos = candidate_text_norm.find(expected_quote_lower, local_start)
-            if pos != -1:
-                match_end_local = highlight_in_candidate(candidate, quote_data['quote'], highlight_style, soup, local_start)
-                if match_end_local is not None:
-                    last_global_offset = start + match_end_local
-                    matched = True
-                    break
+
+            local_start = max(0, start_global - start) if start_global > start else 0
+            pos = find_with_boundaries(text, needle, local_start)
+            if pos == -1:
+                continue
+
+            match_end_local = highlight_in_candidate(candidate, needle, current_style, soup, local_start, strict=True)
+            if match_end_local is None:
+                continue
+
+            last_global_offset = start + match_end_local
+            return True
+
+        return False
+
+    for quote_data in quotes_list:
+        speaker = quote_data.get("speaker", "")
+        current_style = style_for_speaker(speaker)
+
+        quote_with_marks = (quote_data.get("quote_with_marks") or "").strip()
+        quote_plain = (quote_data.get("quote") or "").strip()
+
+        matched = False
+
+        # Stage 1: from current position, search forwards for the quote INCLUDING quote marks (case-sensitive)
+        if quote_with_marks:
+            matched = search_and_highlight_from_global(quote_with_marks, last_global_offset)
+
+        # Stage 2: if not found, search again from the start for the quote INCLUDING quote marks (case-sensitive)
+        if (not matched) and quote_with_marks:
+            matched = search_and_highlight_from_global(quote_with_marks, 0)
+
+        # Stage 3: if still not found, search from the start WITHOUT quote marks (case-sensitive)
+        if (not matched) and quote_plain:
+            matched = search_and_highlight_from_global(quote_plain, 0)
+
+        # Stage 4: if still not found, mark as unmatched (and keep prior behaviour: save to file)
         if not matched:
-            for candidate, start, end, text in candidate_info:
-                candidate_text_norm = match_normalize(text).lower()
-                pos = candidate_text_norm.find(expected_quote_lower)
-                if pos != -1:
-                    match_end_local = highlight_in_candidate(candidate, quote_data['quote'], highlight_style, soup, 0)
-                    if match_end_local is not None:
-                        if start + match_end_local > last_global_offset:
-                            last_global_offset = start + match_end_local
-                        matched = True
-                        break
-        if not matched:
-            unmatched_quotes.append(f"{quote_data['speaker']}: \"{quote_data['quote']}\" [Index: {quote_data['index']}]")
+            unmatched_quotes.append(f"{quote_data.get('speaker','')}: \"{quote_data.get('quote','')}\" [Index: {quote_data.get('index','')}]")
+
     if unmatched_quotes:
         unmatched_quotes_filename = get_unmatched_quotes_filename()
         with open(unmatched_quotes_filename, "w", encoding="utf-8") as f:
             f.write("\n".join(unmatched_quotes))
         st.write(f"⚠️ Unmatched quotes saved to '[userkey]-unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
+
     return str(soup)
 
 def apply_manual_indentation_with_markers(original_docx, html):
@@ -1980,19 +2131,25 @@ def get_canonical_speakers(quotes_file):
 
 def load_quotes(quotes_file, canonical_map):
     quotes_list = []
-    pattern = re.compile(r"^\s*([0-9]+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*(?:[“\"])?(.+?)(?:[”\"])?\s*$")
+    # Capture optional opening/closing quotes so we can do a strict first-pass match INCLUDING quote marks.
+    pattern = re.compile(r"^\s*([0-9]+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*([“\"])?(.+?)([”\"])?\s*$")
     with open(quotes_file, "r", encoding="utf-8") as f:
         for line in f:
             match = pattern.match(line.strip())
             if match:
-                index, speaker_raw, quote = match.groups()
+                index, speaker_raw, open_q, quote_inner_raw, close_q = match.groups()
                 effective = smart_title(speaker_raw)
                 norm = normalize_speaker_name(effective)
                 canonical = canonical_map.get(norm, effective)
+
+                quote_inner = quote_inner_raw.strip()
+                quote_with_marks = f"{open_q or ''}{quote_inner}{close_q or ''}"
+
                 quotes_list.append({
                     "index": index,
                     "speaker": canonical,
-                    "quote": quote.strip()
+                    "quote": quote_inner,
+                    "quote_with_marks": quote_with_marks
                 })
     return quotes_list
 
@@ -2607,6 +2764,25 @@ elif st.session_state.step == 4:
         html_bytes = f.read()
     st.download_button("Download HTML File", html_bytes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}.html", mime="text/html")
+    # --- PDF export (optional) ---
+    pdf_file_name = f"{st.session_state.userkey}-{st.session_state.book_name}.pdf"
+    pdf_bytes: bytes | None = None
+    pdf_error: str | None = None
+    try:
+        pdf_bytes = render_html_to_pdf_bytes(final_html, base_url=os.path.dirname(final_html_path))
+    except Exception as e:
+        pdf_error = str(e)
+
+    if pdf_bytes is not None:
+        st.download_button("Download PDF File", pdf_bytes,
+                           file_name=pdf_file_name, mime="application/pdf")
+    else:
+        st.download_button("Download PDF File", b"",
+                           file_name=pdf_file_name, mime="application/pdf", disabled=True)
+        st.caption("PDF export is unavailable in this environment. "
+                   "Install WeasyPrint (plus its system dependencies) to enable it. "
+                   f"Details: {pdf_error}")
+
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4, ensure_ascii=False).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
                        file_name=f"{st.session_state.userkey}-speaker_colors.json", mime="application/json")
