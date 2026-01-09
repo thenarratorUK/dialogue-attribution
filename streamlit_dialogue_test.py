@@ -2828,24 +2828,14 @@ elif st.session_state.step == 4:
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
-    def _make_lines_csv() -> bytes:
-        return build_csv_from_docx_json_and_quotes()
-
-    try:
-        st.download_button(
-            "Download Lines CSV",
-            data=_make_lines_csv,  # lazy / on-click generation (Streamlit >= supports callable)
-            file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-lines.csv",
-            mime="text/csv",
-        )
-    except TypeError:
-        csv_bytes = _make_lines_csv()
-        st.download_button(
-            "Download Lines CSV",
-            csv_bytes,
-            file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-lines.csv",
-            mime="text/csv",
-        )
+    # Lines CSV export (eager generation; lightweight and avoids Streamlit context issues in deferred callables)
+    csv_bytes = build_csv_from_docx_json_and_quotes()
+    st.download_button(
+        "Download Lines CSV",
+        csv_bytes,
+        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-lines.csv",
+        mime="text/csv",
+    )
     if os.path.exists(get_unmatched_quotes_filename()):
         with open(get_unmatched_quotes_filename(), "rb") as f:
             unmatched_bytes = f.read()
