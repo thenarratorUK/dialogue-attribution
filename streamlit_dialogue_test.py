@@ -2766,22 +2766,61 @@ elif st.session_state.step == 4:
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}.html", mime="text/html")
     # --- PDF export (optional) ---
     pdf_file_name = f"{st.session_state.userkey}-{st.session_state.book_name}.pdf"
-    pdf_bytes: bytes | None = None
-    pdf_error: str | None = None
-    try:
-        pdf_bytes = render_html_to_pdf_bytes(final_html, base_url=os.path.dirname(final_html_path))
-    except Exception as e:
-        pdf_error = str(e)
 
-    if pdf_bytes is not None:
-        st.download_button("Download PDF File", pdf_bytes,
-                           file_name=pdf_file_name, mime="application/pdf")
+    # Only *check* availability during Step 4 render (fast). Actual PDF generation happens on-click.
+    pdf_available = True
+    pdf_import_error: str | None = None
+    try:
+        import weasyprint  # type: ignore  # noqa: F401
+    except Exception as e:
+        pdf_available = False
+        pdf_import_error = str(e)
+
+    if pdf_available:
+        def _make_pdf() -> bytes:
+            # Streamlit can lazily call this when the download button is clicked (newer versions).
+            # For older Streamlit versions (no callable support), we fall back below.
+            return render_html_to_pdf_bytes(final_html, base_url=os.path.dirname(final_html_path))
+
+        try:
+            st.download_button(
+                "Download PDF File",
+                data=_make_pdf,  # lazy / on-click generation (Streamlit >= supports callable)
+                file_name=pdf_file_name,
+                mime="application/pdf",
+            )
+        except TypeError:
+            # Fallback for older Streamlit: generate eagerly (but still only if this branch is reached).
+            try:
+                pdf_bytes = _make_pdf()
+                st.download_button(
+                    "Download PDF File",
+                    pdf_bytes,
+                    file_name=pdf_file_name,
+                    mime="application/pdf",
+                )
+            except Exception as e:
+                st.download_button(
+                    "Download PDF File",
+                    b"",
+                    file_name=pdf_file_name,
+                    mime="application/pdf",
+                    disabled=True,
+                )
+                st.caption(f"PDF export failed: {e}")
     else:
-        st.download_button("Download PDF File", b"",
-                           file_name=pdf_file_name, mime="application/pdf", disabled=True)
-        st.caption("PDF export is unavailable in this environment. "
-                   "Install WeasyPrint (plus its system dependencies) to enable it. "
-                   f"Details: {pdf_error}")
+        st.download_button(
+            "Download PDF File",
+            b"",
+            file_name=pdf_file_name,
+            mime="application/pdf",
+            disabled=True,
+        )
+        st.caption(
+            "PDF export is unavailable in this environment. "
+            "Install WeasyPrint (plus its system dependencies) to enable it. "
+            f"Details: {pdf_import_error}"
+        )
 
     updated_colors = json.dumps(st.session_state.speaker_colors, indent=4, ensure_ascii=False).encode("utf-8")
     st.download_button("Download Updated Speaker Colors JSON", updated_colors,
@@ -2789,9 +2828,24 @@ elif st.session_state.step == 4:
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
-    csv_bytes = build_csv_from_docx_json_and_quotes()
-    st.download_button("Download Lines CSV", csv_bytes,
-                       file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-lines.csv", mime="text/csv")
+    def _make_lines_csv() -> bytes:
+        return build_csv_from_docx_json_and_quotes()
+
+    try:
+        st.download_button(
+            "Download Lines CSV",
+            data=_make_lines_csv,  # lazy / on-click generation (Streamlit >= supports callable)
+            file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-lines.csv",
+            mime="text/csv",
+        )
+    except TypeError:
+        csv_bytes = _make_lines_csv()
+        st.download_button(
+            "Download Lines CSV",
+            csv_bytes,
+            file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-lines.csv",
+            mime="text/csv",
+        )
     if os.path.exists(get_unmatched_quotes_filename()):
         with open(get_unmatched_quotes_filename(), "rb") as f:
             unmatched_bytes = f.read()
