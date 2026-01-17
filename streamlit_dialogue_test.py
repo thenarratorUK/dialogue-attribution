@@ -1931,11 +1931,12 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
 
     return str(soup)
 
-def prefix_speaker_tags_in_html(html: str, narration_label: str = "Narration") -> str:
-    """Prefix each dialogue/narration run with a bracketed speaker label.
+def prefix_speaker_tags_in_html(html: str, narration_label=None) -> str:
+    """Prefix each dialogue run with a bracketed speaker label.
 
     Dialogue runs are identified via <span class="highlight" data-speaker="...">.
-    Narration runs are any visible text outside highlight spans.
+    If narration_label is provided (non-empty), narration runs (text outside highlight spans)
+    are also prefixed with that label.
 
     This is intended as a one-off export format to mirror lines.csv-like segmentation.
     """
@@ -2028,18 +2029,20 @@ def prefix_speaker_tags_in_html(html: str, narration_label: str = "Narration") -
             if sp:
                 _insert_label_before(block, h, sp)
 
-        # Narration label before the first narration content in the block (if any)
-        first_stop = highlights[0] if highlights else None
-        n0 = _first_narration_before(block, stop_at=first_stop)
-        if n0 is not None:
-            _insert_label_before(block, n0, narration_label)
+        # Narration labels are optional (pass narration_label=None to omit them).
+        if narration_label:
+            first_stop = highlights[0] if highlights else None
+            n0 = _first_narration_before(block, stop_at=first_stop)
+            if n0 is not None:
+                _insert_label_before(block, n0, narration_label)
 
         # Narration label after each highlight span if narration exists before the next highlight.
-        for i, h in enumerate(highlights):
-            next_h = highlights[i + 1] if i + 1 < len(highlights) else None
-            nn = _narration_between(block, h, next_h)
-            if nn is not None:
-                _insert_label_before(block, nn, narration_label)
+        if narration_label:
+            for i, h in enumerate(highlights):
+                next_h = highlights[i + 1] if i + 1 < len(highlights) else None
+                nn = _narration_between(block, h, next_h)
+                if nn is not None:
+                    _insert_label_before(block, nn, narration_label)
 
     return str(soup)
 
@@ -2825,7 +2828,7 @@ elif st.session_state.step == 4:
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
     if st.session_state.get("content_type", "Book") == "Script":
         final_html_body = transform_script_layout(final_html_body)
-    final_html_body = prefix_speaker_tags_in_html(final_html_body, narration_label="Narration")
+    final_html_body = prefix_speaker_tags_in_html(final_html_body, narration_label=None)
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
     ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
     first_lines_html = generate_first_lines_html(quotes_list, list(st.session_state.canonical_map.values()))
