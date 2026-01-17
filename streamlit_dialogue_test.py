@@ -82,6 +82,15 @@ def render_html_to_pdf_bytes(html_str: str, base_url: str) -> bytes:
     extra_css = CSS(string="""
         * { print-color-adjust: exact; }
         @page { size: A4; margin: 18mm; }
+
+        /* PDF-only tweaks */
+        body, p, li { line-height: 1.2 !important; }
+
+        em, i,
+        span[style*="font-style: italic"],
+        span[style*="font-style:italic"] {
+          text-decoration: underline;
+        }
     """)
     return HTML(string=html_str, base_url=base_url).write_pdf(stylesheets=[extra_css])
 
@@ -2834,6 +2843,7 @@ elif st.session_state.step == 4:
     first_lines_html = generate_first_lines_html(quotes_list, list(st.session_state.canonical_map.values()))
     fontsel = st.session_state.get("fontsel", "Avenir")
     font_face_html = build_font_face_css(fontsel, embed_base64=True)
+    italic_fallback_face_html = build_font_face_css("Gentium Basic", embed_base64=True)
     final_html_body = summary_html + "\n<br><br><br>\n" + ranking_html + "\n<br><br><br>\n" + first_lines_html + "\n" + final_html_body
     final_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -2842,12 +2852,18 @@ elif st.session_state.step == 4:
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{st.session_state.book_name}</title>
   <style>
+    {italic_fallback_face_html}
     {font_face_html}
     body {{
       font-family: '{fontsel}', sans-serif;
       line-height: 2;
       max-width: 500px;
       margin: auto;
+    }}
+
+    em, i {{
+      font-family: 'Gentium Basic', serif;
+      font-style: italic;
     }}
     span {{
       padding: 0;
