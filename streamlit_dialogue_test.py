@@ -10,7 +10,7 @@ import io
 import csv
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup, NavigableString, Tag
 from collections import Counter
 import html
 
@@ -1733,7 +1733,10 @@ def highlight_across_nodes(parent, quote, highlight_style, soup):
                 new_nodes = []
                 if before:
                     new_nodes.append(NavigableString(before))
-                span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
+                span_attrs = {"class": "highlight", "style": highlight_style}
+                if speaker:
+                    span_attrs["data-speaker"] = speaker
+                span_tag = soup.new_tag("span", attrs=span_attrs)
                 span_tag.string = match_text
                 new_nodes.append(span_tag)
                 if after:
@@ -1757,7 +1760,10 @@ def highlight_quote_in_parent(parent, quote, highlight_style, soup):
                 new_nodes = []
                 if before:
                     new_nodes.append(NavigableString(before))
-                span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
+                span_attrs = {"class": "highlight", "style": highlight_style}
+                if speaker:
+                    span_attrs["data-speaker"] = speaker
+                span_tag = soup.new_tag("span", attrs=span_attrs)
                 span_tag.string = match_text
                 new_nodes.append(span_tag)
                 if after:
@@ -1808,7 +1814,7 @@ def build_candidate_info(soup):
         global_offset += length
     return candidate_info
 
-def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset=0, strict=False):
+def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset=0, strict=False, speaker=None):
     full_text = candidate.get_text()
 
     # Case-sensitive, boundary-aware search (strictness is controlled by what 'quote' is:
@@ -1838,7 +1844,10 @@ def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset
                 new_nodes = []
                 if before:
                     new_nodes.append(NavigableString(before))
-                span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
+                span_attrs = {"class": "highlight", "style": highlight_style}
+                if speaker:
+                    span_attrs["data-speaker"] = speaker
+                span_tag = soup.new_tag("span", attrs=span_attrs)
                 span_tag.string = match_text
                 new_nodes.append(span_tag)
                 if after:
@@ -1880,7 +1889,7 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
             if pos == -1:
                 continue
 
-            match_end_local = highlight_in_candidate(candidate, needle, current_style, soup, local_start, strict=True)
+            match_end_local = highlight_in_candidate(candidate, needle, current_style, soup, local_start, strict=True, speaker=speaker)
             if match_end_local is None:
                 continue
 
@@ -1921,6 +1930,119 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
         st.write(f"⚠️ Unmatched quotes saved to '[userkey]-unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
 
     return str(soup)
+
+def prefix_speaker_tags_in_html(html: str, narration_label: str = "Narration") -> str:
+    """Prefix each dialogue/narration run with a bracketed speaker label.
+
+    Dialogue runs are identified via <span class="highlight" data-speaker="...">.
+    Narration runs are any visible text outside highlight spans.
+
+    This is intended as a one-off export format to mirror lines.csv-like segmentation.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    block_tags = ["p", "li", "h1", "h2", "h3", "h4", "h5", "h6"]
+
+    def _is_within(node, ancestor: Tag) -> bool:
+        p = getattr(node, "parent", None)
+        while p is not None:
+            if p is ancestor:
+                return True
+            p = getattr(p, "parent", None)
+        return False
+
+    def _is_within_highlight(node) -> bool:
+        p = getattr(node, "parent", None)
+        while p is not None:
+            if getattr(p, "name", None) == "span" and "highlight" in (p.get("class") or []):
+                return True
+            p = getattr(p, "parent", None)
+        return False
+
+    def _top_child_under(block: Tag, node):
+        cur = node
+        while getattr(cur, "parent", None) is not None and cur.parent is not block:
+            cur = cur.parent
+        return cur
+
+    def _already_labeled(anchor, label: str) -> bool:
+        prev = getattr(anchor, "previous_sibling", None)
+        while prev is not None and isinstance(prev, NavigableString) and str(prev).strip() == "":
+            prev = getattr(prev, "previous_sibling", None)
+        if getattr(prev, "name", None) == "span" and "speaker-tag" in (prev.get("class") or []):
+            return prev.get("data-label") == label
+        return False
+
+    def _insert_label_before(block: Tag, node, label: str):
+        anchor = _top_child_under(block, node)
+        if _already_labeled(anchor, label):
+            return
+        lab = soup.new_tag("span", attrs={"class": "speaker-tag", "data-label": label})
+        lab.string = f"[{label}]"
+        anchor.insert_before(lab)
+        anchor.insert_before(" ")
+
+    def _first_narration_before(block: Tag, stop_at=None):
+        for el in block.descendants:
+            if stop_at is not None and el is stop_at:
+                return None
+            if isinstance(el, Tag) and el is stop_at:
+                return None
+            if isinstance(el, Tag) and el.name == "span" and "speaker-tag" in (el.get("class") or []):
+                continue
+            if isinstance(el, NavigableString):
+                if str(el).strip() == "":
+                    continue
+                if _is_within_highlight(el):
+                    continue
+                return el
+        return None
+
+    def _narration_between(block: Tag, start_after: Tag, stop_before: Tag | None):
+        for el in start_after.next_elements:
+            # Stop if we leave the current block.
+            if not _is_within(el, block):
+                break
+            if stop_before is not None and el is stop_before:
+                break
+            if isinstance(el, Tag) and el.name == "span" and "speaker-tag" in (el.get("class") or []):
+                continue
+            if isinstance(el, NavigableString):
+                if str(el).strip() == "":
+                    continue
+                if _is_within_highlight(el):
+                    continue
+                return el
+        return None
+
+    for block in soup.find_all(block_tags):
+        # Skip script lines (they already have a dedicated speaker column)
+        if block.name == "p" and "script-line" in (block.get("class") or []):
+            continue
+
+        highlights = list(block.find_all("span", class_="highlight"))
+
+        # Insert dialogue labels before each highlight span.
+        for h in highlights:
+            sp = h.get("data-speaker")
+            if sp:
+                _insert_label_before(block, h, sp)
+
+        # Narration label before the first narration content in the block (if any)
+        first_stop = highlights[0] if highlights else None
+        n0 = _first_narration_before(block, stop_at=first_stop)
+        if n0 is not None:
+            _insert_label_before(block, n0, narration_label)
+
+        # Narration label after each highlight span if narration exists before the next highlight.
+        for i, h in enumerate(highlights):
+            next_h = highlights[i + 1] if i + 1 < len(highlights) else None
+            nn = _narration_between(block, h, next_h)
+            if nn is not None:
+                _insert_label_before(block, nn, narration_label)
+
+    return str(soup)
+
 
 def apply_manual_indentation_with_markers(original_docx, html):
     indented_paras = get_manual_indentation(original_docx)
@@ -2703,6 +2825,7 @@ elif st.session_state.step == 4:
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
     if st.session_state.get("content_type", "Book") == "Script":
         final_html_body = transform_script_layout(final_html_body)
+    final_html_body = prefix_speaker_tags_in_html(final_html_body, narration_label="Narration")
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
     ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
     first_lines_html = generate_first_lines_html(quotes_list, list(st.session_state.canonical_map.values()))
@@ -2784,7 +2907,7 @@ elif st.session_state.step == 4:
 
         try:
             st.download_button(
-                "Download PDF File",
+                "Download PDF File (takes a while!)",
                 data=_make_pdf,  # lazy / on-click generation (Streamlit >= supports callable)
                 file_name=pdf_file_name,
                 mime="application/pdf",
@@ -2794,14 +2917,14 @@ elif st.session_state.step == 4:
             try:
                 pdf_bytes = _make_pdf()
                 st.download_button(
-                    "Download PDF File",
+                    "Download PDF File (takes a while!)",
                     pdf_bytes,
                     file_name=pdf_file_name,
                     mime="application/pdf",
                 )
             except Exception as e:
                 st.download_button(
-                    "Download PDF File",
+                    "Download PDF File (takes a while!)",
                     b"",
                     file_name=pdf_file_name,
                     mime="application/pdf",
@@ -2810,7 +2933,7 @@ elif st.session_state.step == 4:
                 st.caption(f"PDF export failed: {e}")
     else:
         st.download_button(
-            "Download PDF File",
+            "Download PDF File (takes a while!)",
             b"",
             file_name=pdf_file_name,
             mime="application/pdf",
