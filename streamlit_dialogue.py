@@ -264,6 +264,20 @@ _MOJIBAKE_FIXES = {
     "Â": "",
 }
 
+def render_brand_header(logo_width_px: int = 200):
+    """Render the brand header (logo left, text right) if logo.png is present beside this script."""
+    left, middle, right = st.columns([1, 3, 1], vertical_alignment="center")
+
+    with left:
+        logo_path = Path(__file__).with_name("logo.png")
+        if logo_path.exists():
+            st.image(str(logo_path), width=logo_width_px)
+
+    with right:
+        st.markdown('Created by David Winter  \n("The Narrator")  \nhttps://www.thenarrator.co.uk')
+
+    st.markdown("---")
+    
 def _fix_mojibake(s: str) -> str:
     for k, v in _MOJIBAKE_FIXES.items():
         s = s.replace(k, v)
@@ -922,6 +936,7 @@ if "content_type" not in st.session_state:
 # ========= STEP 0: User Identification =========
 
 if st.session_state.step == 0:
+    render_brand_header()
     st.title("Welcome to Scripter")
     st.write(
         "Please enter a unique identifier. This can be any memorable username or passphrase. "
