@@ -8,6 +8,7 @@ import docx
 import base64
 import io
 import csv
+from pathlib import Path
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from bs4 import BeautifulSoup, NavigableString
