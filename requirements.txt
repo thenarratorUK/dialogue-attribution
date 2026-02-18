@@ -4,3 +4,4 @@ mammoth
 beautifulsoup4
 lxml
 weasyprint
+st-theme
