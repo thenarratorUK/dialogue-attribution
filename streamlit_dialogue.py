@@ -13,6 +13,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
+from streamlit_theme import st_theme
 import html
 
 
