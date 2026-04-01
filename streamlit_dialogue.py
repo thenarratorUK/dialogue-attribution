@@ -200,7 +200,7 @@ def build_font_face_css(fontsel: str, embed_base64: bool = False) -> str:
         )
 
     # --------------- OpenDyslexic (full family, OTF) --------------
-    elif fontsel == "OpenDyslexic":
+    elif fontsel in ("OpenDyslexic", "Open Dyslexic"):
         # Regular
         rules.append(
             _face(
@@ -253,6 +253,11 @@ def build_font_face_css(fontsel: str, embed_base64: bool = False) -> str:
         return ""
 
     return "".join(rules)
+
+
+def normalize_font_family(fontsel: str) -> str:
+    """Normalize UI labels / legacy values to CSS font-family names."""
+    return "OpenDyslexic" if fontsel == "Open Dyslexic" else fontsel
 
 _MOJIBAKE_FIXES = {
     # common utf8->latin1
@@ -815,7 +820,8 @@ def write_paragraph_json_for_session():
 if "fontsel" not in st.session_state:
     st.session_state.fontsel = "Avenir"
 
-fontsel = st.session_state.fontsel
+fontsel = normalize_font_family(st.session_state.fontsel)
+st.session_state.fontsel = fontsel
 
 # Build @font-face once, using the shared helper (no Base64 needed for UI)
 font_face_css = build_font_face_css(fontsel, embed_base64=False)
@@ -966,9 +972,10 @@ if st.session_state.step == 0:
     ]
 
     # Map stored CSS font name back to dropdown label
-    current_font = st.session_state.get("fontsel", "Avenir")
+    current_font = normalize_font_family(st.session_state.get("fontsel", "Avenir"))
     css_to_label = {
         "Open Dyslexic": "Open Dyslexic",
+        "OpenDyslexic": "Open Dyslexic",
         "Avenir": "Avenir",
         "Helvetica": "Helvetica",
         "Arial": "Arial",
@@ -990,8 +997,12 @@ if st.session_state.step == 0:
         index=default_index,
     )
 
-    # Map label to actual CSS font-family name
-    fontsel = chosen_label
+    # Map UI label to actual CSS font-family name used by @font-face.
+    # OpenDyslexic must be the exact family name used in the generated CSS.
+    label_to_css = {
+        "Open Dyslexic": "OpenDyslexic",
+    }
+    fontsel = normalize_font_family(label_to_css.get(chosen_label, chosen_label))
 
     st.session_state.fontsel = fontsel
 
@@ -2730,7 +2741,7 @@ elif st.session_state.step == 4:
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
     ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
     first_lines_html = generate_first_lines_html(quotes_list, list(st.session_state.canonical_map.values()))
-    fontsel = st.session_state.get("fontsel", "Avenir")
+    fontsel = normalize_font_family(st.session_state.get("fontsel", "Avenir"))
     font_face_html = build_font_face_css(fontsel, embed_base64=True)
     final_html_body = summary_html + "\n<br><br><br>\n" + ranking_html + "\n<br><br><br>\n" + first_lines_html + "\n" + final_html_body
     final_html = f"""<!DOCTYPE html>
