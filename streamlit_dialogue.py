@@ -850,6 +850,16 @@ body {{
   padding: 0;
 }}
 
+/* Streamlit renders most UI inside .stApp, so set font there too. */
+.stApp, .stApp p, .stApp span, .stApp label, .stApp li,
+.stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6,
+.stApp div[data-baseweb="select"] *,
+.stApp div[data-baseweb="input"] *,
+.stApp div[data-baseweb="textarea"] *,
+.stApp [data-testid="stMarkdownContainer"] * {{
+  font-family: var(--font-family) !important;
+}}
+
 h1, h2, h3, h4, h5, h6 {{
   color: var(--text-color);
   font-weight: 700;
