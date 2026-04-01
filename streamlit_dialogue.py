@@ -289,7 +289,7 @@ def render_brand_header(logo_width_px: int = 200):
 
     with right:
         st.markdown(
-            'Created by David Winter  \n("The Narrator")  \nhttps://www.thenarrator.co.uk  \n[Readme](Readme.md)'
+            'Created by David Winter  \n("The Narrator")  \nhttps://www.thenarrator.co.uk  \nReadme: [Link](https://github.com/thenarratorUK/dialogue-attribution/blob/main/Readme.md)'
         )
 
     st.markdown("---")
@@ -1021,7 +1021,6 @@ if st.session_state.step == 0:
         index=default_index,
     )
 
-    render_font_preview(font_options)
 
     # Map UI label to actual CSS font-family name used by @font-face.
     # OpenDyslexic must be the exact family name used in the generated CSS.
