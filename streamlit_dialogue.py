@@ -259,6 +259,20 @@ def normalize_font_family(fontsel: str) -> str:
     """Normalize UI labels / legacy values to CSS font-family names."""
     return "OpenDyslexic" if fontsel == "Open Dyslexic" else fontsel
 
+
+def font_label_to_css_family(font_label: str) -> str:
+    """Map UI dropdown labels to the CSS font-family values used by the app."""
+    if font_label == "Open Dyslexic":
+        return "OpenDyslexic"
+    return font_label
+
+
+def css_family_to_font_label(css_family: str) -> str:
+    """Map stored CSS font-family values back to UI dropdown labels."""
+    if css_family in ("Open Dyslexic", "OpenDyslexic"):
+        return "Open Dyslexic"
+    return css_family
+
 _MOJIBAKE_FIXES = {
     # common utf8->latin1
     "â€˜": "‘", "â€™": "’", "â€œ": "“", "â€": "”",
@@ -834,7 +848,14 @@ def write_paragraph_json_for_session():
 if "fontsel" not in st.session_state:
     st.session_state.fontsel = "Avenir"
 
-fontsel = normalize_font_family(st.session_state.fontsel)
+if "fontsel_label" not in st.session_state:
+    st.session_state.fontsel_label = css_family_to_font_label(
+        normalize_font_family(st.session_state.fontsel)
+    )
+
+fontsel = normalize_font_family(
+    font_label_to_css_family(st.session_state.get("fontsel_label", "Avenir"))
+)
 st.session_state.fontsel = fontsel
 
 # Apply the selected font globally across the full app, including start page.
@@ -996,23 +1017,11 @@ if st.session_state.step == 0:
         "Lexend",
     ]
 
-    # Map stored CSS font name back to dropdown label
-    current_font = normalize_font_family(st.session_state.get("fontsel", "Avenir"))
-    css_to_label = {
-        "Open Dyslexic": "Open Dyslexic",
-        "OpenDyslexic": "Open Dyslexic",
-        "Avenir": "Avenir",
-        "Helvetica": "Helvetica",
-        "Arial": "Arial",
-        "Georgia": "Georgia",
-        "Times New Roman": "Times New Roman",
-        "Courier New": "Courier New",
-        "Gentium Basic": "Gentium Basic",
-        "Lexend": "Lexend",
-    }
-    current_label = css_to_label.get(current_font, "Avenir")
+    current_font = css_family_to_font_label(
+        normalize_font_family(st.session_state.get("fontsel", "Avenir"))
+    )
     try:
-        default_index = font_options.index(current_label)
+        default_index = font_options.index(current_font)
     except ValueError:
         default_index = font_options.index("Avenir")
 
@@ -1020,15 +1029,13 @@ if st.session_state.step == 0:
         "Choose a font for the UI and exported HTML:",
         options=font_options,
         index=default_index,
+        key="fontsel_label",
     )
 
 
     # Map UI label to actual CSS font-family name used by @font-face.
     # OpenDyslexic must be the exact family name used in the generated CSS.
-    label_to_css = {
-        "Open Dyslexic": "OpenDyslexic",
-    }
-    fontsel = normalize_font_family(label_to_css.get(chosen_label, chosen_label))
+    fontsel = normalize_font_family(font_label_to_css_family(chosen_label))
 
     st.session_state.fontsel = fontsel
 
