@@ -288,10 +288,24 @@ def render_brand_header(logo_width_px: int = 200):
             st.image(str(chosen), width=logo_width_px)
 
     with right:
-        st.markdown('Created by David Winter  \n("The Narrator")  \nhttps://www.thenarrator.co.uk')
+        st.markdown(
+            'Created by David Winter  \n("The Narrator")  \nhttps://www.thenarrator.co.uk  \n[Readme](Readme.md)'
+        )
 
     st.markdown("---")
     
+def render_font_preview(font_options: list[str]):
+    """Show each font name rendered in its own font as a quick preview."""
+    preview_lines = []
+    for font_name in font_options:
+        css_font = normalize_font_family("OpenDyslexic" if font_name == "Open Dyslexic" else font_name)
+        preview_lines.append(
+            f'<div style="font-family: {css_font}, sans-serif; margin: 0.1rem 0;">{html.escape(font_name)}</div>'
+        )
+
+    st.markdown("**Font preview:**", help="Streamlit selectbox options cannot be styled per row, so previews are shown below.")
+    st.markdown("\n".join(preview_lines), unsafe_allow_html=True)
+
 def _fix_mojibake(s: str) -> str:
     for k, v in _MOJIBAKE_FIXES.items():
         s = s.replace(k, v)
@@ -1006,6 +1020,8 @@ if st.session_state.step == 0:
         options=font_options,
         index=default_index,
     )
+
+    render_font_preview(font_options)
 
     # Map UI label to actual CSS font-family name used by @font-face.
     # OpenDyslexic must be the exact family name used in the generated CSS.
