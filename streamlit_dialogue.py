@@ -837,8 +837,9 @@ if "fontsel" not in st.session_state:
 fontsel = normalize_font_family(st.session_state.fontsel)
 st.session_state.fontsel = fontsel
 
-# Build @font-face once, using the shared helper (no Base64 needed for UI)
-font_face_css = build_font_face_css(fontsel, embed_base64=False)
+# Apply the selected font globally across the full app, including start page.
+# For custom bundled fonts, use Base64 so Streamlit can load fonts reliably.
+font_face_css = build_font_face_css(fontsel, embed_base64=True)
 # Inject custom CSS
 custom_css = f"""
 <style>
