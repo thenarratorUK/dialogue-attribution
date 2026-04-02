@@ -607,6 +607,16 @@ def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1
     if start_idx >= len(plain_paras):
         start_idx = 0
 
+    prior_occurrences = 0
+    if normalized_highlight:
+        for idx in range(0, start_idx):
+            para_norm = normalize_text(plain_paras[idx]).lower()
+            prior_occurrences += count_with_boundaries_ci(para_norm, normalized_highlight)
+
+    local_occurrence_target = occurrence_target - prior_occurrences
+    if local_occurrence_target < 1:
+        local_occurrence_target = 1
+
     cumulative = 0
     chosen_idx = None
     within_para_target = 1
@@ -616,9 +626,9 @@ def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1
         para_norm = normalize_text(para_plain).lower()
         count_here = count_with_boundaries_ci(para_norm, normalized_highlight) if normalized_highlight else 0
         if count_here > 0:
-            if cumulative + count_here >= occurrence_target:
+            if cumulative + count_here >= local_occurrence_target:
                 chosen_idx = idx
-                within_para_target = occurrence_target - cumulative
+                within_para_target = local_occurrence_target - cumulative
                 break
             cumulative += count_here
 
