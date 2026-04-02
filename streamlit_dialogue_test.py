@@ -514,46 +514,10 @@ def build_csv_from_docx_json_and_quotes():
     return buf.getvalue().encode("utf-8")
 
 def trim_paragraph_cache_before_previous(previous_html: str):
-    try:
-        djson_path = st.session_state.get('d_json_path')
-        if not djson_path or not os.path.exists(djson_path):
-            return False
-        with open(djson_path, "r", encoding="utf-8") as f:
-            paragraphs_html = json.load(f)
-        if not previous_html:
-            return False
-
-        # Exact match first
-        try:
-            idx = paragraphs_html.index(previous_html)
-        except ValueError:
-            # Fallback: compare by text (strip tags) to be resilient
-            def strip_html(s):
-                try:
-                    soup = BeautifulSoup(s, "html.parser")
-                    return soup.get_text() or ""
-                except Exception:
-                    return s
-            prev_text = strip_html(previous_html)
-            idx = -1
-            for i, p in enumerate(paragraphs_html):
-                if strip_html(p) == prev_text:
-                    idx = i
-                    break
-
-        if idx <= 0:
-            # Either not found (-1) or already first item (0); nothing to remove before it.
-            return False
-
-        # Keep from 'previous_html' onward (i.e., drop 0..idx-1 inclusive)
-        new_paragraphs = paragraphs_html[idx:]
-        with open(djson_path, "w", encoding="utf-8") as f:
-            json.dump(new_paragraphs, f, ensure_ascii=False)
-        # Update session so subsequent reads are consistent
-        st.session_state.trimmed_paragraphs_since_last = True
-        return True
-    except Exception:
-        return False
+    # Intentionally disabled in test flow:
+    # destructive cache trimming is unsafe when duplicate paragraphs exist,
+    # because content-equality matching cannot identify the exact prior location.
+    return False
 
 def neutralize_markdown_in_html(html_s: str) -> str:
     try:
@@ -642,7 +606,7 @@ def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1
 
     for idx, para_plain in enumerate(plain_paras):
         para_norm = normalize_text(para_plain).lower()
-        count_here = len(re.findall(re.escape(normalized_highlight), para_norm)) if normalized_highlight else 0
+        count_here = count_with_boundaries_ci(para_norm, normalized_highlight) if normalized_highlight else 0
         if count_here > 0:
             if cumulative + count_here >= occurrence_target:
                 chosen_idx = idx
@@ -652,7 +616,7 @@ def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1
 
     if chosen_idx is None:
         for idx, para_plain in enumerate(plain_paras):
-            if normalized_highlight in normalize_text(para_plain).lower():
+            if find_with_boundaries_ci(normalize_text(para_plain).lower(), normalized_highlight, 0) is not None:
                 chosen_idx = idx
                 within_para_target = 1
                 break
@@ -667,18 +631,19 @@ def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1
     try:
         soup = BeautifulSoup(paragraphs_html[chosen_idx], "html.parser")
                 # --- begin: tag-stripped match + bold in original HTML (early-return if applied) ---
-        # 1) Build a tag-stripped view for matching (keeps text as user sees it)
+        # 1) Build a tag-stripped view for matching plus normalized index-map
         plain_text = soup.get_text()
-        
-        # 2) Find the m-th (within_para_target) occurrence on the stripped view
-        _pat = re.compile(re.escape(dialogue_to_highlight), re.IGNORECASE)
-        _occ = 0
+        plain_norm, norm_to_raw = normalize_text_with_index_map(plain_text)
+
+        # 2) Find the m-th (within_para_target) occurrence on normalized plain text
+        _span_norm = nth_span_with_boundaries_ci(plain_norm.lower(), normalized_highlight, within_para_target)
         _span = None
-        for _m in _pat.finditer(plain_text):
-            _occ += 1
-            if _occ == within_para_target:
-                _span = (_m.start(), _m.end())
-                break
+        if _span_norm is not None and norm_to_raw:
+            ns, ne = _span_norm
+            if 0 <= ns < len(norm_to_raw) and 0 <= (ne - 1) < len(norm_to_raw):
+                raw_start = norm_to_raw[ns]
+                raw_end = norm_to_raw[ne - 1] + 1
+                _span = (raw_start, raw_end)
         
         # 3) If found, map the [start:end) range back onto the original soup's text nodes and wrap with <b>
         if _span is not None:
@@ -1086,6 +1051,134 @@ def normalize_text(text):
 def match_normalize(text):
     return text.replace("’", "'").replace("‘", "'")
 
+
+def _is_boundary_char(ch: str) -> bool:
+    return not ch or not ch.isalnum()
+
+
+def find_with_boundaries_ci(haystack: str, needle: str, start: int = 0):
+    """Case-insensitive, boundary-aware substring search."""
+    if haystack is None or needle is None:
+        return None
+    h = haystack.lower()
+    n = needle.lower()
+    if not n:
+        return None
+    pos = h.find(n, max(0, start))
+    while pos != -1:
+        left_ok = (pos == 0) or _is_boundary_char(h[pos - 1])
+        right_pos = pos + len(n)
+        right_ok = (right_pos == len(h)) or _is_boundary_char(h[right_pos])
+        if left_ok and right_ok:
+            return pos
+        pos = h.find(n, pos + 1)
+    return None
+
+
+def count_with_boundaries_ci(haystack: str, needle: str) -> int:
+    if not haystack or not needle:
+        return 0
+    count = 0
+    start = 0
+    while True:
+        pos = find_with_boundaries_ci(haystack, needle, start)
+        if pos is None:
+            return count
+        count += 1
+        start = pos + len(needle)
+
+
+def nth_span_with_boundaries_ci(haystack: str, needle: str, target: int):
+    """Return (start, end) for the target-th boundary-aware CI match."""
+    if target <= 0:
+        return None
+    start = 0
+    seen = 0
+    while True:
+        pos = find_with_boundaries_ci(haystack, needle, start)
+        if pos is None:
+            return None
+        seen += 1
+        if seen == target:
+            return pos, pos + len(needle)
+        start = pos + len(needle)
+
+
+def normalize_text_with_index_map(text: str):
+    """Normalize text while preserving a normalized-char -> raw-index map."""
+    raw = str(text or "")
+    out_chars = []
+    out_map = []
+    prev_space = True
+
+    def emit(chars: str, raw_index: int):
+        nonlocal prev_space
+        for c in chars:
+            if c.isspace():
+                if prev_space:
+                    continue
+                out_chars.append(" ")
+                out_map.append(raw_index)
+                prev_space = True
+            else:
+                out_chars.append(c)
+                out_map.append(raw_index)
+                prev_space = False
+
+    for i, ch in enumerate(raw):
+        if ch == "\u00A0":
+            emit(" ", i)
+        elif ch == "…":
+            emit("...", i)
+        elif ch in ("“", "”"):
+            emit('"', i)
+        elif ch in ("’", "‘"):
+            emit("'", i)
+        else:
+            emit(ch, i)
+
+    # strip leading/trailing spaces in normalized text (to mirror normalize_text)
+    start = 0
+    end = len(out_chars)
+    while start < end and out_chars[start] == " ":
+        start += 1
+    while end > start and out_chars[end - 1] == " ":
+        end -= 1
+    return "".join(out_chars[start:end]), out_map[start:end]
+
+
+def extract_first_quoted_segment(text: str) -> str:
+    """Return the first quoted segment if present, else the full text."""
+    if text is None:
+        return ""
+    s = str(text)
+    m = re.search(r'[“"]([^”"]+)[”"]', s)
+    if not m:
+        m = re.search(r"[‘']([^’']+)[’']", s)
+    return m.group(1) if m else s
+
+
+def compute_occurrence_target_for_review(quotes_records: list[dict], review_index: int) -> int:
+    """Count how many earlier quote records carry the same normalized dialogue segment."""
+    if not quotes_records or review_index is None or review_index < 0 or review_index >= len(quotes_records):
+        return 1
+
+    current = quotes_records[review_index] or {}
+    current_text = (current.get("quote_with_marks") or current.get("quote_text") or "").strip()
+    current_norm = normalize_text(extract_first_quoted_segment(current_text)).lower()
+    if not current_norm:
+        return 1
+
+    prior_same = 0
+    for i in range(review_index):
+        rec = quotes_records[i] or {}
+        prior_text = (rec.get("quote_with_marks") or rec.get("quote_text") or "").strip()
+        prior_norm = normalize_text(extract_first_quoted_segment(prior_text)).lower()
+        if prior_norm == current_norm:
+            prior_same += 1
+
+    return 1 + prior_same
+
 def normalize_speaker_name(name):
     # Replace typographic apostrophes with straight ones, remove periods, lowercase, and trim.
     return name.replace("’", "'").replace("‘", "'").replace(".", "").lower().strip()
@@ -1130,10 +1223,12 @@ def parse_quote_line(raw_line: str):
     }
 
 
-def make_quote_record(index: int, speaker_text: str, quote_text: str, quote_with_marks: str = None, content_type: str = None):
+def make_quote_record(index: int, speaker_text: str, quote_text: str, quote_with_marks: str = None, content_type: str = None, index_raw: str = None):
+    idx_raw = str(index_raw if index_raw is not None else index)
     return {
         "quote_id": f"q{index:05d}",
         "index": int(index),
+        "index_raw": idx_raw,
         "speaker_text": (speaker_text or "Unknown").strip() or "Unknown",
         "quote_text": (quote_text or "").strip(),
         "quote_with_marks": (quote_with_marks if quote_with_marks is not None else quote_text or "").strip(),
@@ -1158,8 +1253,12 @@ def make_quote_record(index: int, speaker_text: str, quote_text: str, quote_with
 
 
 def normalize_record_schema(record: dict, index_fallback: int):
+    raw_idx = record.get("index_raw")
+    if raw_idx is None or str(raw_idx).strip() == "":
+        raw_idx = str(record.get("index") or index_fallback)
     base = make_quote_record(
         index=int(record.get("index") or index_fallback),
+        index_raw=raw_idx,
         speaker_text=record.get("speaker_text") or "Unknown",
         quote_text=record.get("quote_text") or record.get("quote_with_marks") or "",
         quote_with_marks=record.get("quote_with_marks") or record.get("quote_text") or "",
@@ -1167,6 +1266,7 @@ def normalize_record_schema(record: dict, index_fallback: int):
     )
     base.update(record or {})
     base["index"] = int(base.get("index") or index_fallback)
+    base["index_raw"] = str(base.get("index_raw") or base["index"])
     base["quote_id"] = str(base.get("quote_id") or f"q{base['index']:05d}")
     if not isinstance(base.get("candidate_speakers"), list):
         base["candidate_speakers"] = []
@@ -1176,7 +1276,7 @@ def normalize_record_schema(record: dict, index_fallback: int):
 
 
 def record_to_legacy_line(record: dict) -> str:
-    idx = record.get("index") or 0
+    idx = record.get("index_raw") or record.get("index") or 0
     speaker = record.get("speaker_text") or "Unknown"
     quote_with_marks = record.get("quote_with_marks")
     if quote_with_marks is None or quote_with_marks == "":
@@ -1192,6 +1292,7 @@ def build_quotes_records_from_dialogue_list(dialogue_list):
         if parsed:
             rec = make_quote_record(
                 index=parsed.get("index") or i,
+                index_raw=parsed.get("index_raw") or str(parsed.get("index") or i),
                 speaker_text=parsed.get("speaker_text") or "Unknown",
                 quote_text=parsed.get("quote_text") or "",
                 quote_with_marks=parsed.get("quote_with_marks") or "",
@@ -1199,6 +1300,7 @@ def build_quotes_records_from_dialogue_list(dialogue_list):
             )
         else:
             rec = make_quote_record(index=i, speaker_text="Unknown", quote_text=str(line).strip(), content_type=content_type)
+        rec["quote_id"] = f"q{i:05d}"
         records.append(rec)
     return records
 
@@ -1223,9 +1325,7 @@ def get_next_record_for_review(quotes_records, start_index=0):
     for i in range(max(0, int(start_index)), len(quotes_records)):
         rec = quotes_records[i]
         speaker_unknown = (rec.get("speaker_text") or "").strip().lower() == "unknown"
-        unreviewed = rec.get("review_status", "unreviewed") == "unreviewed"
-        has_prediction = rec.get("predicted_speaker") is not None
-        if speaker_unknown or unreviewed or has_prediction:
+        if speaker_unknown:
             return i, rec
     return None, None
 
@@ -2670,42 +2770,12 @@ elif st.session_state.step == 2:
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
         # Using global JSON-only context resolver
         
-        # Compute occurrence target from previous two lines in quotes (quoted-segment aware)
+        # Compute occurrence target from all previous lines (quoted-segment aware)
         occurrence_target = 1
         try:
             qrecs = st.session_state.get("quotes_records") or []
-            def quote_for(i):
-                if i is None or i < 0 or i >= len(qrecs):
-                    return None
-                return (qrecs[i].get("quote_with_marks") or qrecs[i].get("quote_text") or "").strip()
-            def first_quoted_segment(s: str) -> str:
-                if s is None:
-                    return ""
-                m1 = re.search(r'[“"]([^”"]+)[”"]', s)
-                if not m1:
-                    m1 = re.search(r"[‘']([^’']+)[’']", s)
-                return m1.group(1) if m1 else s
-            curr_seg = first_quoted_segment(dialogue)
-            curr_norm = normalize_text(curr_seg).lower()
-            prev1 = quote_for(review_index - 1)
-            prev2 = quote_for(review_index - 2)
-            prev1_norm = normalize_text(first_quoted_segment(prev1)).lower() if prev1 else ""
-            prev2_norm = normalize_text(first_quoted_segment(prev2)).lower() if prev2 else ""
-            def _norm_contains(a: str, b: str) -> bool:
-                try:
-                    if not a or not b:
-                        return False
-                    # One-way containment: treat as repeat only if CURRENT (a) is within PREVIOUS (b)
-                    return a in b
-                except Exception:
-                    return False
-            
-            count_prev_same = int(_norm_contains(curr_norm, prev1_norm)) + int(_norm_contains(curr_norm, prev2_norm))            
-            occurrence_target = 1 + count_prev_same
+            occurrence_target = compute_occurrence_target_for_review(qrecs, review_index)
 #            st.session_state._dbg_occurrence_target = occurrence_target
-#            st.session_state._dbg_prev1_norm = prev1_norm
-#            st.session_state._dbg_prev2_norm = prev2_norm
-#            st.session_state._dbg_curr_norm = curr_norm
         except Exception:
             pass
         context = get_context_for_dialogue_json_only(dialogue, occurrence_target=occurrence_target)
