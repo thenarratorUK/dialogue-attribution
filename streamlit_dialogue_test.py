@@ -3196,6 +3196,14 @@ elif st.session_state.step == 4:
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
+    quotes_records_payload = st.session_state.get("quotes_records") or []
+    quotes_records_bytes = json.dumps(quotes_records_payload, indent=2, ensure_ascii=False).encode("utf-8")
+    st.download_button(
+        "Download Quotes Records JSON",
+        quotes_records_bytes,
+        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes-records.json",
+        mime="application/json",
+    )
     canonical_map_payload = st.session_state.get("canonical_map") or {}
     canonical_quotes_bytes = json.dumps(canonical_map_payload, indent=2, ensure_ascii=False).encode("utf-8")
     st.download_button(
