@@ -1624,6 +1624,32 @@ def extract_dialogue_from_docx(book_name, docx_path):
                 k -= 1
             st = st[:k+1] + st[-1:]
         return (len(st) >= 2 and st[0] in _OPEN_QS and st[-1] in _CLOSE_QS)
+    def _split_interrupted_dialogue(seg_text: str):
+        """
+        Split a quoted dialogue segment when it contains a narration interruption
+        wrapped in dashes, e.g.:
+          “There can’t be. And yet”—she raised her head—“and yet sometimes ...”
+        Returns one or more dialogue-only pieces (narration interruption removed).
+        """
+        s = (seg_text or "").strip()
+        if not s:
+            return []
+
+        # Match: [optional open quote] left [close quote]—aside—[open quote] right [optional close quote]
+        m = re.match(
+            r'^\s*([“"]?)(.+?)([”"])\s*[—–]\s*([^—–]+?)\s*[—–]\s*([“"])(.+?)([”"]?)\s*$',
+            s
+        )
+        if not m:
+            return [s]
+
+        open1, left, close1, aside, open2, right, close2 = m.groups()
+        if not aside or not re.search(r'[A-Za-z]', aside):
+            return [s]
+
+        left_piece = f"{open1}{left.strip()}{close1}".strip()
+        right_piece = f"{open2}{right.strip()}{close2}".strip()
+        return [p for p in (left_piece, right_piece) if p]
     doc = docx.Document(docx_path)
     quote_pattern = re.compile(r'(?:^|\s)(["“].+?["”])(?=$|[\s\.\,\;\:\!\?\)\]\}])')
     dialogue_list = []
@@ -1721,8 +1747,8 @@ def extract_dialogue_from_docx(book_name, docx_path):
         for _, seg in items:
             seg_clean = (seg or "").strip()
             if seg_clean:
-                if seg_clean:
-                    dialogue_list.append(f"{line_number}. Unknown: {seg_clean}")
+                for seg_part in _split_interrupted_dialogue(seg_clean):
+                    dialogue_list.append(f"{line_number}. Unknown: {seg_part}")
                     line_number += 1
     
                 continue
