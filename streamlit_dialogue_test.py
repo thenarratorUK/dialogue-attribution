@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
 from streamlit_theme import st_theme
 import html
+from datetime import datetime, timezone
 
 
 # -----------------------------
@@ -993,6 +994,8 @@ if "step" not in st.session_state:
 
 if "content_type" not in st.session_state:
     st.session_state.content_type = "Book"
+if "review_events" not in st.session_state:
+    st.session_state.review_events = []
 
 # ========= STEP 0: User Identification =========
 
@@ -1102,6 +1105,194 @@ def smart_title(name):
     result = re.sub(r"\(([mf])\)$", lambda m: "(" + m.group(1).upper() + ")", result, flags=re.IGNORECASE)
     return result
 
+
+QUOTE_LINE_PATTERN = re.compile(r"^\s*(\d+(?:[a-zA-Z]+)?)\.\s+([^:]+):\s*(.*)$")
+
+
+def parse_quote_line(raw_line: str):
+    if raw_line is None:
+        return None
+    line = str(raw_line).rstrip("\n")
+    m = QUOTE_LINE_PATTERN.match(line)
+    if not m:
+        return None
+    idx_raw, speaker_raw, quote_raw = m.groups()
+    try:
+        index_num = int(re.match(r"^\d+", idx_raw).group(0))
+    except Exception:
+        index_num = None
+    return {
+        "index_raw": idx_raw,
+        "index": index_num,
+        "speaker_text": speaker_raw.strip(),
+        "quote_text": quote_raw.strip(),
+        "quote_with_marks": quote_raw.strip(),
+    }
+
+
+def make_quote_record(index: int, speaker_text: str, quote_text: str, quote_with_marks: str = None, content_type: str = None):
+    return {
+        "quote_id": f"q{index:05d}",
+        "index": int(index),
+        "speaker_text": (speaker_text or "Unknown").strip() or "Unknown",
+        "quote_text": (quote_text or "").strip(),
+        "quote_with_marks": (quote_with_marks if quote_with_marks is not None else quote_text or "").strip(),
+        "review_status": "unreviewed",
+        "predicted_speaker": None,
+        "prediction_confidence": None,
+        "candidate_speakers": [],
+        "candidate_scores": {},
+        "model_version": None,
+        "content_type": content_type or st.session_state.get("content_type", "Book"),
+        "paragraph_index": None,
+        "occurrence_target": None,
+        "context_previous_html": None,
+        "context_current_html": None,
+        "context_next_html": None,
+        "context_previous_text": None,
+        "context_current_text": None,
+        "context_next_text": None,
+        "notes": "",
+        "manual_override": False,
+    }
+
+
+def normalize_record_schema(record: dict, index_fallback: int):
+    base = make_quote_record(
+        index=int(record.get("index") or index_fallback),
+        speaker_text=record.get("speaker_text") or "Unknown",
+        quote_text=record.get("quote_text") or record.get("quote_with_marks") or "",
+        quote_with_marks=record.get("quote_with_marks") or record.get("quote_text") or "",
+        content_type=record.get("content_type") or st.session_state.get("content_type", "Book"),
+    )
+    base.update(record or {})
+    base["index"] = int(base.get("index") or index_fallback)
+    base["quote_id"] = str(base.get("quote_id") or f"q{base['index']:05d}")
+    if not isinstance(base.get("candidate_speakers"), list):
+        base["candidate_speakers"] = []
+    if not isinstance(base.get("candidate_scores"), dict):
+        base["candidate_scores"] = {}
+    return base
+
+
+def record_to_legacy_line(record: dict) -> str:
+    idx = record.get("index") or 0
+    speaker = record.get("speaker_text") or "Unknown"
+    quote_with_marks = record.get("quote_with_marks")
+    if quote_with_marks is None or quote_with_marks == "":
+        quote_with_marks = record.get("quote_text") or ""
+    return f"{idx}. {speaker}: {quote_with_marks}\n"
+
+
+def build_quotes_records_from_dialogue_list(dialogue_list):
+    records = []
+    content_type = st.session_state.get("content_type", "Book")
+    for i, line in enumerate(dialogue_list or [], start=1):
+        parsed = parse_quote_line(line)
+        if parsed:
+            rec = make_quote_record(
+                index=parsed.get("index") or i,
+                speaker_text=parsed.get("speaker_text") or "Unknown",
+                quote_text=parsed.get("quote_text") or "",
+                quote_with_marks=parsed.get("quote_with_marks") or "",
+                content_type=content_type,
+            )
+        else:
+            rec = make_quote_record(index=i, speaker_text="Unknown", quote_text=str(line).strip(), content_type=content_type)
+        records.append(rec)
+    return records
+
+
+def build_quotes_records_from_quotes_lines(quotes_lines):
+    dialogue = [str(line).rstrip("\n") for line in (quotes_lines or []) if str(line).strip()]
+    return build_quotes_records_from_dialogue_list(dialogue)
+
+
+def build_quotes_lines_from_records(quotes_records):
+    return [record_to_legacy_line(r) for r in (quotes_records or [])]
+
+
+def predict_speaker_for_record(record, quotes_records, session_state):
+    """Future model seam. TODO: wire supervised attribution model output here."""
+    return None
+
+
+def get_next_record_for_review(quotes_records, start_index=0):
+    if not quotes_records:
+        return None, None
+    for i in range(max(0, int(start_index)), len(quotes_records)):
+        rec = quotes_records[i]
+        speaker_unknown = (rec.get("speaker_text") or "").strip().lower() == "unknown"
+        unreviewed = rec.get("review_status", "unreviewed") == "unreviewed"
+        has_prediction = rec.get("predicted_speaker") is not None
+        if speaker_unknown or unreviewed or has_prediction:
+            return i, rec
+    return None, None
+
+
+def update_record_speaker(record: dict, new_speaker: str, action_type: str = "correct"):
+    prev = record.get("speaker_text") or "Unknown"
+    cleaned = (new_speaker or "").strip()
+    if action_type == "skip":
+        record["review_status"] = "skipped"
+        return prev, prev
+    if action_type == "ambiguous":
+        record["review_status"] = "ambiguous"
+        return prev, prev
+    if not cleaned:
+        return prev, prev
+    cleaned = smart_title(cleaned)
+    record["speaker_text"] = cleaned
+    record["manual_override"] = True
+    if prev.strip().lower() == "unknown":
+        record["review_status"] = "corrected"
+    elif normalize_speaker_name(prev) == normalize_speaker_name(cleaned):
+        record["review_status"] = "accepted"
+    else:
+        record["review_status"] = "corrected"
+    return prev, cleaned
+
+
+def append_review_event(record: dict, action_type: str, previous_speaker: str, new_speaker: str):
+    if "review_events" not in st.session_state or st.session_state.review_events is None:
+        st.session_state.review_events = []
+    st.session_state.review_events.append({
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "quote_id": record.get("quote_id"),
+        "previous_speaker": previous_speaker,
+        "new_speaker": new_speaker,
+        "action_type": action_type,
+        "review_status": record.get("review_status"),
+        "predicted_speaker_at_action": record.get("predicted_speaker"),
+        "prediction_confidence_at_action": record.get("prediction_confidence"),
+    })
+
+
+def sync_quotes_lines_from_records():
+    st.session_state.quotes_lines = build_quotes_lines_from_records(st.session_state.get("quotes_records") or [])
+
+
+def ensure_quotes_records_in_session():
+    records = st.session_state.get("quotes_records")
+    if records:
+        st.session_state.quotes_records = [normalize_record_schema(r, i + 1) for i, r in enumerate(records)]
+        sync_quotes_lines_from_records()
+        return
+    qlines = st.session_state.get("quotes_lines")
+    if qlines:
+        st.session_state.quotes_records = build_quotes_records_from_quotes_lines(qlines)
+        sync_quotes_lines_from_records()
+
+
+def migrate_legacy_state_to_quotes_records(data: dict):
+    records = data.get("quotes_records")
+    if records:
+        return [normalize_record_schema(r, i + 1) for i, r in enumerate(records)]
+    legacy_lines = data.get("quotes_lines")
+    if legacy_lines:
+        return build_quotes_records_from_quotes_lines(legacy_lines)
+    return []
+
 #def write_file_atomic(filepath, lines):
 #    with open(filepath, "w", encoding="utf-8") as f:
 #        f.writelines(lines)
@@ -1112,12 +1303,15 @@ def smart_title(name):
 # Auto-Save & Auto-Load Functions
 # ---------------------------
 def auto_save():
+    ensure_quotes_records_in_session()
     data = {
         "step": st.session_state.get("step", 1),
+        "quotes_records": st.session_state.get("quotes_records"),
         "quotes_lines": st.session_state.get("quotes_lines"),
         "speaker_colors": st.session_state.get("speaker_colors"),
         "unknown_index": st.session_state.get("unknown_index", 0),
         "console_log": st.session_state.get("console_log", []),
+        "review_events": st.session_state.get("review_events", []),
         "canonical_map": st.session_state.get("canonical_map") or {},
         "book_name": st.session_state.get("book_name"),
         "existing_speaker_colors": st.session_state.get("existing_speaker_colors"),
@@ -1140,6 +1334,9 @@ def auto_load():
     if os.path.exists(get_progress_file()):
         with open(get_progress_file(), "r", encoding="utf-8") as f:
             data = json.load(f)
+        data["quotes_records"] = migrate_legacy_state_to_quotes_records(data)
+        if data.get("quotes_records"):
+            data["quotes_lines"] = build_quotes_lines_from_records(data.get("quotes_records"))
         for key, value in data.items():
             st.session_state[key] = value
             # Normalise restored structures
@@ -1151,6 +1348,8 @@ def auto_load():
                 st.session_state.flagged_names = set()
             if st.session_state.get("canonical_map") is None:
                 st.session_state.canonical_map = {}
+            if st.session_state.get("review_events") is None:
+                st.session_state.review_events = []
 
             # Rebuild counts/flags from quotes_lines if missing or empty
             needs_rebuild = (
@@ -1178,6 +1377,8 @@ def auto_load():
                             flagged.add(norm)
                 st.session_state.speaker_counts = counts_cap10
                 st.session_state.flagged_names = flagged
+
+        ensure_quotes_records_in_session()
 
         if "existing_speaker_colors" in st.session_state and st.session_state.existing_speaker_colors:
             st.session_state.existing_speaker_colors = {normalize_speaker_name(k): v for k, v in st.session_state.existing_speaker_colors.items()}
@@ -2246,6 +2447,7 @@ def restart_app():
 
 # ========= STEP 1: Upload & Initialize =========
 if st.session_state.step == 1:
+    ensure_quotes_records_in_session()
     st.markdown("<h4>DOCX to HTML Converter with Dialogue Highlighting</h4>", unsafe_allow_html=True)
     st.write("Upload your DOCX and quotes text files. Optionally, upload an existing speaker_colors.json file.")
     st.write("Alternatively, upload **just a DOCX** to create a quotes text file.")
@@ -2304,7 +2506,8 @@ if st.session_state.step == 1:
                     dialogue_list = extract_dialogue_from_docx_script(st.session_state.docx_path)
                 else:
                     dialogue_list = extract_dialogue_from_docx(st.session_state.book_name, st.session_state.docx_path)
-                st.session_state.quotes_lines = [line + "\n" for line in dialogue_list]
+                st.session_state.quotes_records = build_quotes_records_from_dialogue_list(dialogue_list)
+                st.session_state.quotes_lines = build_quotes_lines_from_records(st.session_state.quotes_records)
                 st.session_state.docx_only = True
                 st.success("Quotes extracted from DOCX.")
                 quotes_txt = "\n".join(dialogue_list)
@@ -2379,6 +2582,8 @@ if st.session_state.step == 1:
                 if quotes_file is not None:
                     quotes_text = quotes_file.read().decode("utf-8")
                     st.session_state.quotes_lines = quotes_text.splitlines(keepends=True)
+                    st.session_state.quotes_records = build_quotes_records_from_quotes_lines(st.session_state.quotes_lines)
+                    sync_quotes_lines_from_records()
                     st.session_state.docx_only = False
                     # Persist uploaded quotes to a consistent filename and ensure JSON cache for previews
                     try:
@@ -2397,6 +2602,7 @@ if st.session_state.step == 1:
                         pass
                 else:
                     st.session_state.quotes_lines = None
+                    st.session_state.quotes_records = []
                     st.session_state.docx_only = True
                 
                     # Create/overwrite the paragraph JSON once here for docx-only case
@@ -2443,49 +2649,35 @@ if st.session_state.step == 1:
                 auto_save()
                 st.rerun()
 
-# ========= STEP 2: Unknown Speaker Processing =========
+# ========= STEP 2: Quote Record Review =========
 elif st.session_state.step == 2:
-    st.markdown("<h4>Step 2: Process Unknown Speakers</h4>", unsafe_allow_html=True)
-    st.write("For each quote with speaker 'Unknown', type a replacement (or type 'skip', 'exit', or 'undo').")
-    
-    def get_next_unknown_line():
-        quotes = st.session_state.get("quotes_lines")
-        if quotes is None:
-            return None, None, None
-        pattern = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]+)(:.*)$")
-        for i in range(st.session_state.unknown_index, len(quotes)):
-            line = quotes[i]
-            m = pattern.match(line)
-            if m:
-                prefix, speaker_raw, remainder = m.groups()
-                if speaker_raw.strip() == "Unknown":
-                    return i, prefix, remainder
-        return None, None, None
+    ensure_quotes_records_in_session()
+    st.markdown("<h4>Step 2: Review Quote Records</h4>", unsafe_allow_html=True)
+    st.write("Review each unresolved quote record. Type a speaker, or use 'skip', 'exit', or 'undo'.")
 
-    index, prefix, remainder = get_next_unknown_line()
-    if index is None:
-        st.write("No more unknown speakers found.")
+    review_index, review_record = get_next_record_for_review(
+        st.session_state.get("quotes_records") or [],
+        st.session_state.get("unknown_index", 0),
+    )
+    if review_index is None or review_record is None:
+        st.write("No more unresolved quote records found.")
         if st.button("Proceed to Color Assignment"):
             st.session_state.step = 3
             auto_save()
             st.rerun()
     else:
-        dialogue = remainder.lstrip(": ").rstrip("\n")
+        dialogue = (review_record.get("quote_with_marks") or review_record.get("quote_text") or "").strip()
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
         # Using global JSON-only context resolver
         
         # Compute occurrence target from previous two lines in quotes (quoted-segment aware)
         occurrence_target = 1
         try:
-            qlines = st.session_state.get("quotes_lines") or []
-            patt = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]+)(:.*)$")
-            def remainder_for(i):
-                if i is None or i < 0 or i >= len(qlines):
+            qrecs = st.session_state.get("quotes_records") or []
+            def quote_for(i):
+                if i is None or i < 0 or i >= len(qrecs):
                     return None
-                mm = patt.match(qlines[i])
-                if not mm:
-                    return None
-                return mm.group(3).lstrip(": ").rstrip("\n")
+                return (qrecs[i].get("quote_with_marks") or qrecs[i].get("quote_text") or "").strip()
             def first_quoted_segment(s: str) -> str:
                 if s is None:
                     return ""
@@ -2495,8 +2687,8 @@ elif st.session_state.step == 2:
                 return m1.group(1) if m1 else s
             curr_seg = first_quoted_segment(dialogue)
             curr_norm = normalize_text(curr_seg).lower()
-            prev1 = remainder_for(index-1)
-            prev2 = remainder_for(index-2)
+            prev1 = quote_for(review_index - 1)
+            prev2 = quote_for(review_index - 2)
             prev1_norm = normalize_text(first_quoted_segment(prev1)).lower() if prev1 else ""
             prev2_norm = normalize_text(first_quoted_segment(prev2)).lower() if prev2 else ""
             def _norm_contains(a: str, b: str) -> bool:
@@ -2518,11 +2710,6 @@ elif st.session_state.step == 2:
             pass
         context = get_context_for_dialogue_json_only(dialogue, occurrence_target=occurrence_target)
         if context:
-            # Remember the currently displayed previous paragraph for potential trimming upon match
-            try:
-                st.session_state.context_previous_candidate = context.get("previous")
-            except Exception:
-                st.session_state.context_previous_candidate = None
             if "previous" in context:
                 st.markdown(neutralize_markdown_in_html(context["previous"]), unsafe_allow_html=True)
             st.markdown(neutralize_markdown_in_html(context["current"]), unsafe_allow_html=True)
@@ -2537,8 +2724,18 @@ elif st.session_state.step == 2:
                 st.markdown(neutralize_markdown_in_html(context["next"]), unsafe_allow_html=True)
         else:
             st.write("No context found in cached JSON for this quote.")
+
+        review_record["occurrence_target"] = occurrence_target
+        review_record["paragraph_index"] = review_record.get("paragraph_index")
+        review_record["context_previous_html"] = context.get("previous") if context else None
+        review_record["context_current_html"] = context.get("current") if context else None
+        review_record["context_next_html"] = context.get("next") if context else None
+        review_record["context_previous_text"] = BeautifulSoup(context["previous"], "html.parser").get_text() if context and context.get("previous") else None
+        review_record["context_current_text"] = BeautifulSoup(context["current"], "html.parser").get_text() if context and context.get("current") else None
+        review_record["context_next_text"] = BeautifulSoup(context["next"], "html.parser").get_text() if context and context.get("next") else None
+
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
-        st.write(f"**Dialogue (Line {index+1}):** {dialogue}")
+        st.write(f"**Dialogue (Line {review_record.get('index', review_index+1)}):** {dialogue}")
         
         def process_unknown_input(new_speaker: str):
             new_speaker = new_speaker.strip()
@@ -2549,35 +2746,35 @@ elif st.session_state.step == 2:
                 st.session_state.console_log.insert(0, "Exiting unknown speaker processing.")
                 st.session_state.step = 3
             elif new_speaker.lower() == "skip":
-                st.session_state.console_log.insert(0, f"Skipped line {index+1}.")
-                st.session_state.unknown_index = index + 1
+                prev_speaker, new_speaker_value = update_record_speaker(review_record, "", action_type="skip")
+                append_review_event(review_record, "skip", prev_speaker, new_speaker_value)
+                st.session_state.console_log.insert(0, f"Skipped line {review_index+1}.")
+                st.session_state.unknown_index = review_index + 1
             elif new_speaker.lower() == "undo":
-                if "last_update" in st.session_state:
-                    last_index = st.session_state.last_update[0]
-                    pattern = re.compile(r"^(\s*\d+(?:[a-zA-Z]+)?\.\s+)([^:]*)(:.*)$")
-                    m = pattern.match(st.session_state.quotes_lines[last_index])
-                    if m:
-                        prefix_u, _, remainder_u = m.groups()
-                        st.session_state.quotes_lines[last_index] = prefix_u + "Unknown" + remainder_u
+                if "last_update" in st.session_state and st.session_state.last_update:
+                    last = st.session_state.last_update
+                    last_index = last.get("index")
+                    if last_index is not None and 0 <= last_index < len(st.session_state.get("quotes_records") or []):
+                        st.session_state.quotes_records[last_index].update(last.get("record_snapshot") or {})
                         st.session_state.unknown_index = last_index
-                        st.session_state.console_log.insert(0, f"Reverted line {last_index+1} to Unknown.")
+                        append_review_event(
+                            st.session_state.quotes_records[last_index],
+                            "undo",
+                            last.get("new_speaker"),
+                            last.get("previous_speaker"),
+                        )
+                        st.session_state.console_log.insert(0, f"Reverted line {last_index+1} to previous speaker.")
                     del st.session_state.last_update
                 else:
                     st.session_state.console_log.insert(0, "Nothing to undo.")
             else:
-                st.session_state.last_update = (index, st.session_state.quotes_lines[index])
-                # On confirmed match only (not skip/exit/undo), trim paragraph cache before the "previous" that was displayed.
-                try:
-                    prev_for_trim = st.session_state.get("context_previous_candidate")
-                except Exception:
-                    prev_for_trim = None
-                try:
-                    _trim_ok = trim_paragraph_cache_before_previous(prev_for_trim)
-                    if _trim_ok:
-                        st.session_state.console_log.insert(0, "Trimmed paragraph cache before previous context.")
-                except Exception:
-                    pass
-
+                previous_speaker = review_record.get("speaker_text")
+                st.session_state.last_update = {
+                    "index": review_index,
+                    "record_snapshot": dict(review_record),
+                    "previous_speaker": previous_speaker,
+                    "new_speaker": smart_title(new_speaker),
+                }
                 updated_speaker = smart_title(new_speaker)
 
                 # Increment count for unflagged speakers and flag at 10
@@ -2595,12 +2792,11 @@ elif st.session_state.step == 2:
                         st.session_state.speaker_counts[norm] = new_cnt
                 except Exception as _e:
                     pass
-                new_line = prefix + updated_speaker + remainder
-                if not new_line.endswith("\n"):
-                    new_line += "\n"
-                st.session_state.quotes_lines[index] = new_line
-                st.session_state.console_log.insert(0, f"Updated line {index+1} with speaker: {updated_speaker}")
-                st.session_state.unknown_index = index + 1
+                prev_speaker, new_speaker_value = update_record_speaker(review_record, updated_speaker, action_type="correct")
+                append_review_event(review_record, "correct", prev_speaker, new_speaker_value)
+                st.session_state.console_log.insert(0, f"Updated line {review_index+1} with speaker: {updated_speaker}")
+                st.session_state.unknown_index = review_index + 1
+            sync_quotes_lines_from_records()
             auto_save()
             st.rerun()
         
@@ -2646,6 +2842,7 @@ elif st.session_state.step == 2:
 
 # ========= STEP 3: Speaker Color Assignment =========
 elif st.session_state.step == 3:
+    ensure_quotes_records_in_session()
     st.markdown("<h4>Step 3: Speaker Color Assignment</h4>", unsafe_allow_html=True)
     st.write("Assign highlight colors for speakers that do not yet have an assigned color. You can also click 'Edit Speaker Colors' to review and change all assignments.")
     # Load the canonical speakers.
@@ -2722,6 +2919,7 @@ elif st.session_state.step == 3:
 
 # ========= EDIT COLORS: Full Speaker Color Assignment =========
 elif st.session_state.step == "edit_colors":
+    ensure_quotes_records_in_session()
     st.markdown("<h4>Edit Speaker Colors</h4>", unsafe_allow_html=True)
     st.write("Edit the assigned colors for all speakers (excluding 'Unknown'):")
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w+", encoding="utf-8") as tmp_quotes:
@@ -2755,6 +2953,7 @@ elif st.session_state.step == "edit_colors":
 
 # ========= STEP 4: Final HTML Generation =========
 elif st.session_state.step == 4:
+    ensure_quotes_records_in_session()
     if "speaker_colors" not in st.session_state or st.session_state.speaker_colors is None:
         st.session_state.speaker_colors = load_existing_colors() or {}
     st.markdown("<h4>Step 4: Final HTML Generation</h4>", unsafe_allow_html=True)
@@ -2915,6 +3114,8 @@ elif st.session_state.step == 4:
             if os.path.exists(quotes_filename):
                 with open(quotes_filename, "r", encoding="utf-8") as f:
                     st.session_state.quotes_lines = f.read().splitlines(keepends=True)
+                st.session_state.quotes_records = build_quotes_records_from_quotes_lines(st.session_state.quotes_lines)
+                sync_quotes_lines_from_records()
         if os.path.exists(f"{st.session_state.userkey}-speaker_colors.json"):
             with open(f"{st.session_state.userkey}-speaker_colors.json", "r", encoding="utf-8") as f:
                 colors = json.load(f)
