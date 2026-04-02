@@ -8,10 +8,12 @@ import docx
 import base64
 import io
 import csv
+from pathlib import Path
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from bs4 import BeautifulSoup, NavigableString, Tag
+from bs4 import BeautifulSoup, NavigableString
 from collections import Counter
+from streamlit_theme import st_theme
 import html
 
 
@@ -82,15 +84,6 @@ def render_html_to_pdf_bytes(html_str: str, base_url: str) -> bytes:
     extra_css = CSS(string="""
         * { print-color-adjust: exact; }
         @page { size: A4; margin: 18mm; }
-
-        /* PDF-only tweaks */
-        body, p, li { line-height: 1.2 !important; }
-
-        em, i,
-        span[style*="font-style: italic"],
-        span[style*="font-style:italic"] {
-          text-decoration: underline;
-        }
     """)
     return HTML(string=html_str, base_url=base_url).write_pdf(stylesheets=[extra_css])
 
@@ -207,7 +200,7 @@ def build_font_face_css(fontsel: str, embed_base64: bool = False) -> str:
         )
 
     # --------------- OpenDyslexic (full family, OTF) --------------
-    elif fontsel == "OpenDyslexic":
+    elif fontsel in ("OpenDyslexic", "Open Dyslexic"):
         # Regular
         rules.append(
             _face(
@@ -261,6 +254,25 @@ def build_font_face_css(fontsel: str, embed_base64: bool = False) -> str:
 
     return "".join(rules)
 
+
+def normalize_font_family(fontsel: str) -> str:
+    """Normalize UI labels / legacy values to CSS font-family names."""
+    return "OpenDyslexic" if fontsel == "Open Dyslexic" else fontsel
+
+
+def font_label_to_css_family(font_label: str) -> str:
+    """Map UI dropdown labels to the CSS font-family values used by the app."""
+    if font_label == "Open Dyslexic":
+        return "OpenDyslexic"
+    return font_label
+
+
+def css_family_to_font_label(css_family: str) -> str:
+    """Map stored CSS font-family values back to UI dropdown labels."""
+    if css_family in ("Open Dyslexic", "OpenDyslexic"):
+        return "Open Dyslexic"
+    return css_family
+
 _MOJIBAKE_FIXES = {
     # common utf8->latin1
     "â€˜": "‘", "â€™": "’", "â€œ": "“", "â€": "”",
@@ -272,6 +284,41 @@ _MOJIBAKE_FIXES = {
     # stray nbsp-ish
     "Â": "",
 }
+
+def render_brand_header(logo_width_px: int = 200):
+    """Render the brand header (logo left, text right). Uses logo_alt.png when Streamlit theme is dark."""
+    left, middle, right = st.columns([1, 1, 1], vertical_alignment="center")
+
+    with left:
+        logo_path = Path(__file__).with_name("logo.png")
+        logo_alt_path = Path(__file__).with_name("logo_alt.png")
+
+        if logo_path.exists():
+            theme = st_theme() or {}
+            base = (theme.get("base") or "").lower()
+
+            # If Streamlit is in dark mode and alt logo exists, use it; otherwise use default.
+            chosen = logo_alt_path if (base == "dark" and logo_alt_path.exists()) else logo_path
+            st.image(str(chosen), width=logo_width_px)
+
+    with right:
+        st.markdown(
+            'Created by David Winter  \n("The Narrator")  \nhttps://www.thenarrator.co.uk  \nReadme: [Link](https://github.com/thenarratorUK/dialogue-attribution/blob/main/Readme.md)'
+        )
+
+    st.markdown("---")
+    
+def render_font_preview(font_options: list[str]):
+    """Show each font name rendered in its own font as a quick preview."""
+    preview_lines = []
+    for font_name in font_options:
+        css_font = normalize_font_family("OpenDyslexic" if font_name == "Open Dyslexic" else font_name)
+        preview_lines.append(
+            f'<div style="font-family: {css_font}, sans-serif; margin: 0.1rem 0;">{html.escape(font_name)}</div>'
+        )
+
+    st.markdown("**Font preview:**", help="Streamlit selectbox options cannot be styled per row, so previews are shown below.")
+    st.markdown("\n".join(preview_lines), unsafe_allow_html=True)
 
 def _fix_mojibake(s: str) -> str:
     for k, v in _MOJIBAKE_FIXES.items():
@@ -801,10 +848,19 @@ def write_paragraph_json_for_session():
 if "fontsel" not in st.session_state:
     st.session_state.fontsel = "Avenir"
 
-fontsel = st.session_state.fontsel
+if "fontsel_label" not in st.session_state:
+    st.session_state.fontsel_label = css_family_to_font_label(
+        normalize_font_family(st.session_state.fontsel)
+    )
 
-# Build @font-face once, using the shared helper (no Base64 needed for UI)
-font_face_css = build_font_face_css(fontsel, embed_base64=False)
+fontsel = normalize_font_family(
+    font_label_to_css_family(st.session_state.get("fontsel_label", "Avenir"))
+)
+st.session_state.fontsel = fontsel
+
+# Apply the selected font globally across the full app, including start page.
+# For custom bundled fonts, use Base64 so Streamlit can load fonts reliably.
+font_face_css = build_font_face_css(fontsel, embed_base64=True)
 # Inject custom CSS
 custom_css = f"""
 <style>
@@ -828,6 +884,16 @@ body {{
   color: var(--text-color);
   margin: 0;
   padding: 0;
+}}
+
+/* Streamlit renders most UI inside .stApp, so set font there too. */
+.stApp, .stApp p, .stApp span, .stApp label, .stApp li,
+.stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6,
+.stApp div[data-baseweb="select"] *,
+.stApp div[data-baseweb="input"] *,
+.stApp div[data-baseweb="textarea"] *,
+.stApp [data-testid="stMarkdownContainer"] * {{
+  font-family: var(--font-family) !important;
 }}
 
 h1, h2, h3, h4, h5, h6 {{
@@ -931,6 +997,7 @@ if "content_type" not in st.session_state:
 # ========= STEP 0: User Identification =========
 
 if st.session_state.step == 0:
+    render_brand_header()
     st.title("Welcome to Scripter")
     st.write(
         "Please enter a unique identifier. This can be any memorable username or passphrase. "
@@ -950,22 +1017,11 @@ if st.session_state.step == 0:
         "Lexend",
     ]
 
-    # Map stored CSS font name back to dropdown label
-    current_font = st.session_state.get("fontsel", "Avenir")
-    css_to_label = {
-        "Open Dyslexic": "Open Dyslexic",
-        "Avenir": "Avenir",
-        "Helvetica": "Helvetica",
-        "Arial": "Arial",
-        "Georgia": "Georgia",
-        "Times New Roman": "Times New Roman",
-        "Courier New": "Courier New",
-        "Gentium Basic": "Gentium Basic",
-        "Lexend": "Lexend",
-    }
-    current_label = css_to_label.get(current_font, "Avenir")
+    current_font = css_family_to_font_label(
+        normalize_font_family(st.session_state.get("fontsel", "Avenir"))
+    )
     try:
-        default_index = font_options.index(current_label)
+        default_index = font_options.index(current_font)
     except ValueError:
         default_index = font_options.index("Avenir")
 
@@ -973,10 +1029,13 @@ if st.session_state.step == 0:
         "Choose a font for the UI and exported HTML:",
         options=font_options,
         index=default_index,
+        key="fontsel_label",
     )
 
-    # Map label to actual CSS font-family name
-    fontsel = chosen_label
+
+    # Map UI label to actual CSS font-family name used by @font-face.
+    # OpenDyslexic must be the exact family name used in the generated CSS.
+    fontsel = normalize_font_family(font_label_to_css_family(chosen_label))
 
     st.session_state.fontsel = fontsel
 
@@ -1742,10 +1801,7 @@ def highlight_across_nodes(parent, quote, highlight_style, soup):
                 new_nodes = []
                 if before:
                     new_nodes.append(NavigableString(before))
-                span_attrs = {"class": "highlight", "style": highlight_style}
-                if speaker:
-                    span_attrs["data-speaker"] = speaker
-                span_tag = soup.new_tag("span", attrs=span_attrs)
+                span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
                 span_tag.string = match_text
                 new_nodes.append(span_tag)
                 if after:
@@ -1769,10 +1825,7 @@ def highlight_quote_in_parent(parent, quote, highlight_style, soup):
                 new_nodes = []
                 if before:
                     new_nodes.append(NavigableString(before))
-                span_attrs = {"class": "highlight", "style": highlight_style}
-                if speaker:
-                    span_attrs["data-speaker"] = speaker
-                span_tag = soup.new_tag("span", attrs=span_attrs)
+                span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
                 span_tag.string = match_text
                 new_nodes.append(span_tag)
                 if after:
@@ -1823,7 +1876,7 @@ def build_candidate_info(soup):
         global_offset += length
     return candidate_info
 
-def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset=0, strict=False, speaker=None):
+def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset=0, strict=False):
     full_text = candidate.get_text()
 
     # Case-sensitive, boundary-aware search (strictness is controlled by what 'quote' is:
@@ -1853,10 +1906,7 @@ def highlight_in_candidate(candidate, quote, highlight_style, soup, start_offset
                 new_nodes = []
                 if before:
                     new_nodes.append(NavigableString(before))
-                span_attrs = {"class": "highlight", "style": highlight_style}
-                if speaker:
-                    span_attrs["data-speaker"] = speaker
-                span_tag = soup.new_tag("span", attrs=span_attrs)
+                span_tag = soup.new_tag("span", attrs={"class": "highlight", "style": highlight_style})
                 span_tag.string = match_text
                 new_nodes.append(span_tag)
                 if after:
@@ -1898,7 +1948,7 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
             if pos == -1:
                 continue
 
-            match_end_local = highlight_in_candidate(candidate, needle, current_style, soup, local_start, strict=True, speaker=speaker)
+            match_end_local = highlight_in_candidate(candidate, needle, current_style, soup, local_start, strict=True)
             if match_end_local is None:
                 continue
 
@@ -1939,122 +1989,6 @@ def highlight_dialogue_in_html(html, quotes_list, speaker_colors):
         st.write(f"⚠️ Unmatched quotes saved to '[userkey]-unmatched_quotes.txt' ({len(unmatched_quotes)} entries)")
 
     return str(soup)
-
-def prefix_speaker_tags_in_html(html: str, narration_label=None) -> str:
-    """Prefix each dialogue run with a bracketed speaker label.
-
-    Dialogue runs are identified via <span class="highlight" data-speaker="...">.
-    If narration_label is provided (non-empty), narration runs (text outside highlight spans)
-    are also prefixed with that label.
-
-    This is intended as a one-off export format to mirror lines.csv-like segmentation.
-    """
-    soup = BeautifulSoup(html, "html.parser")
-
-    block_tags = ["p", "li", "h1", "h2", "h3", "h4", "h5", "h6"]
-
-    def _is_within(node, ancestor: Tag) -> bool:
-        p = getattr(node, "parent", None)
-        while p is not None:
-            if p is ancestor:
-                return True
-            p = getattr(p, "parent", None)
-        return False
-
-    def _is_within_highlight(node) -> bool:
-        p = getattr(node, "parent", None)
-        while p is not None:
-            if getattr(p, "name", None) == "span" and "highlight" in (p.get("class") or []):
-                return True
-            p = getattr(p, "parent", None)
-        return False
-
-    def _top_child_under(block: Tag, node):
-        cur = node
-        while getattr(cur, "parent", None) is not None and cur.parent is not block:
-            cur = cur.parent
-        return cur
-
-    def _already_labeled(anchor, label: str) -> bool:
-        prev = getattr(anchor, "previous_sibling", None)
-        while prev is not None and isinstance(prev, NavigableString) and str(prev).strip() == "":
-            prev = getattr(prev, "previous_sibling", None)
-        if getattr(prev, "name", None) == "span" and "speaker-tag" in (prev.get("class") or []):
-            return prev.get("data-label") == label
-        return False
-
-    def _insert_label_before(block: Tag, node, label: str):
-        anchor = _top_child_under(block, node)
-        if _already_labeled(anchor, label):
-            return
-        lab = soup.new_tag("span", attrs={"class": "speaker-tag", "data-label": label})
-        lab.string = f"[{label}]"
-        anchor.insert_before(lab)
-        anchor.insert_before(" ")
-
-    def _first_narration_before(block: Tag, stop_at=None):
-        for el in block.descendants:
-            if stop_at is not None and el is stop_at:
-                return None
-            if isinstance(el, Tag) and el is stop_at:
-                return None
-            if isinstance(el, Tag) and el.name == "span" and "speaker-tag" in (el.get("class") or []):
-                continue
-            if isinstance(el, NavigableString):
-                if str(el).strip() == "":
-                    continue
-                if _is_within_highlight(el):
-                    continue
-                return el
-        return None
-
-    def _narration_between(block: Tag, start_after: Tag, stop_before: Tag | None):
-        for el in start_after.next_elements:
-            # Stop if we leave the current block.
-            if not _is_within(el, block):
-                break
-            if stop_before is not None and el is stop_before:
-                break
-            if isinstance(el, Tag) and el.name == "span" and "speaker-tag" in (el.get("class") or []):
-                continue
-            if isinstance(el, NavigableString):
-                if str(el).strip() == "":
-                    continue
-                if _is_within_highlight(el):
-                    continue
-                return el
-        return None
-
-    for block in soup.find_all(block_tags):
-        # Skip script lines (they already have a dedicated speaker column)
-        if block.name == "p" and "script-line" in (block.get("class") or []):
-            continue
-
-        highlights = list(block.find_all("span", class_="highlight"))
-
-        # Insert dialogue labels before each highlight span.
-        for h in highlights:
-            sp = h.get("data-speaker")
-            if sp:
-                _insert_label_before(block, h, sp)
-
-        # Narration labels are optional (pass narration_label=None to omit them).
-        if narration_label:
-            first_stop = highlights[0] if highlights else None
-            n0 = _first_narration_before(block, stop_at=first_stop)
-            if n0 is not None:
-                _insert_label_before(block, n0, narration_label)
-
-        # Narration label after each highlight span if narration exists before the next highlight.
-        if narration_label:
-            for i, h in enumerate(highlights):
-                next_h = highlights[i + 1] if i + 1 < len(highlights) else None
-                nn = _narration_between(block, h, next_h)
-                if nn is not None:
-                    _insert_label_before(block, nn, narration_label)
-
-    return str(soup)
-
 
 def apply_manual_indentation_with_markers(original_docx, html):
     indented_paras = get_manual_indentation(original_docx)
@@ -2837,13 +2771,11 @@ elif st.session_state.step == 4:
     final_html_body = apply_manual_indentation_with_markers(st.session_state.docx_path, highlighted_html)
     if st.session_state.get("content_type", "Book") == "Script":
         final_html_body = transform_script_layout(final_html_body)
-    final_html_body = prefix_speaker_tags_in_html(final_html_body, narration_label=None)
     summary_html = generate_summary_html(quotes_list, list(st.session_state.canonical_map.values()), st.session_state.speaker_colors)
     ranking_html = generate_ranking_html(quotes_list, st.session_state.speaker_colors)
     first_lines_html = generate_first_lines_html(quotes_list, list(st.session_state.canonical_map.values()))
-    fontsel = st.session_state.get("fontsel", "Avenir")
+    fontsel = normalize_font_family(st.session_state.get("fontsel", "Avenir"))
     font_face_html = build_font_face_css(fontsel, embed_base64=True)
-    italic_fallback_face_html = build_font_face_css("Gentium Basic", embed_base64=True)
     final_html_body = summary_html + "\n<br><br><br>\n" + ranking_html + "\n<br><br><br>\n" + first_lines_html + "\n" + final_html_body
     final_html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -2852,18 +2784,12 @@ elif st.session_state.step == 4:
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{st.session_state.book_name}</title>
   <style>
-    {italic_fallback_face_html}
     {font_face_html}
     body {{
       font-family: '{fontsel}', sans-serif;
       line-height: 2;
       max-width: 500px;
       margin: auto;
-    }}
-
-    em, i {{
-      font-family: 'Gentium Basic', serif;
-      font-style: italic;
     }}
     span {{
       padding: 0;
