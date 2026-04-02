@@ -573,7 +573,7 @@ def build_d_paragraphs_html(docx_path):
 
 
 
-def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1):
+def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1, start_paragraph_index: int = 0):
     try:
         djson_path = st.session_state.get('d_json_path')
         if not djson_path or not os.path.exists(djson_path):
@@ -600,11 +600,19 @@ def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1
 
     plain_paras = [soup_text(p) for p in paragraphs_html]
 
+    try:
+        start_idx = max(0, int(start_paragraph_index or 0))
+    except Exception:
+        start_idx = 0
+    if start_idx >= len(plain_paras):
+        start_idx = 0
+
     cumulative = 0
     chosen_idx = None
     within_para_target = 1
 
-    for idx, para_plain in enumerate(plain_paras):
+    for idx in range(start_idx, len(plain_paras)):
+        para_plain = plain_paras[idx]
         para_norm = normalize_text(para_plain).lower()
         count_here = count_with_boundaries_ci(para_norm, normalized_highlight) if normalized_highlight else 0
         if count_here > 0:
@@ -615,7 +623,8 @@ def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1
             cumulative += count_here
 
     if chosen_idx is None:
-        for idx, para_plain in enumerate(plain_paras):
+        for idx in range(start_idx, len(plain_paras)):
+            para_plain = plain_paras[idx]
             if find_with_boundaries_ci(normalize_text(para_plain).lower(), normalized_highlight, 0) is not None:
                 chosen_idx = idx
                 within_para_target = 1
@@ -625,6 +634,7 @@ def get_context_for_dialogue_json_only(dialogue: str, occurrence_target: int = 1
         return None
 
     ctx = {}
+    ctx["paragraph_index"] = chosen_idx
     if chosen_idx > 0:
         ctx["previous"] = paragraphs_html[chosen_idx - 1]
 
@@ -1178,6 +1188,21 @@ def compute_occurrence_target_for_review(quotes_records: list[dict], review_inde
             prior_same += 1
 
     return 1 + prior_same
+
+
+def compute_start_paragraph_index_for_review(quotes_records: list[dict], review_index: int) -> int:
+    """Use prior resolved context to keep Step 2 paragraph lookup moving forward."""
+    if not quotes_records or review_index is None or review_index <= 0:
+        return 0
+
+    last_seen = 0
+    for i in range(review_index):
+        rec = quotes_records[i] or {}
+        pidx = rec.get("paragraph_index")
+        if isinstance(pidx, int) and pidx >= 0:
+            last_seen = pidx
+    return last_seen
+
 
 def normalize_speaker_name(name):
     # Replace typographic apostrophes with straight ones, remove periods, lowercase, and trim.
@@ -2772,13 +2797,19 @@ elif st.session_state.step == 2:
         
         # Compute occurrence target from all previous lines (quoted-segment aware)
         occurrence_target = 1
+        start_paragraph_index = 0
         try:
             qrecs = st.session_state.get("quotes_records") or []
             occurrence_target = compute_occurrence_target_for_review(qrecs, review_index)
+            start_paragraph_index = compute_start_paragraph_index_for_review(qrecs, review_index)
 #            st.session_state._dbg_occurrence_target = occurrence_target
         except Exception:
             pass
-        context = get_context_for_dialogue_json_only(dialogue, occurrence_target=occurrence_target)
+        context = get_context_for_dialogue_json_only(
+            dialogue,
+            occurrence_target=occurrence_target,
+            start_paragraph_index=start_paragraph_index,
+        )
         if context:
             if "previous" in context:
                 st.markdown(neutralize_markdown_in_html(context["previous"]), unsafe_allow_html=True)
@@ -2796,7 +2827,7 @@ elif st.session_state.step == 2:
             st.write("No context found in cached JSON for this quote.")
 
         review_record["occurrence_target"] = occurrence_target
-        review_record["paragraph_index"] = review_record.get("paragraph_index")
+        review_record["paragraph_index"] = context.get("paragraph_index") if context else review_record.get("paragraph_index")
         review_record["context_previous_html"] = context.get("previous") if context else None
         review_record["context_current_html"] = context.get("current") if context else None
         review_record["context_next_html"] = context.get("next") if context else None
@@ -3165,6 +3196,22 @@ elif st.session_state.step == 4:
     updated_quotes = "".join(st.session_state.quotes_lines).encode("utf-8")
     st.download_button("Download Updated Quotes TXT", updated_quotes,
                        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes.txt", mime="text/plain")
+    quotes_records_payload = st.session_state.get("quotes_records") or []
+    quotes_records_bytes = json.dumps(quotes_records_payload, indent=2, ensure_ascii=False).encode("utf-8")
+    st.download_button(
+        "Download Quotes Records JSON",
+        quotes_records_bytes,
+        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-quotes-records.json",
+        mime="application/json",
+    )
+    canonical_map_payload = st.session_state.get("canonical_map") or {}
+    canonical_quotes_bytes = json.dumps(canonical_map_payload, indent=2, ensure_ascii=False).encode("utf-8")
+    st.download_button(
+        "Download Canonical Map JSON",
+        canonical_quotes_bytes,
+        file_name=f"{st.session_state.userkey}-{st.session_state.book_name}-canonical-map.json",
+        mime="application/json",
+    )
     # Lines CSV export (eager generation; lightweight and avoids Streamlit context issues in deferred callables)
     csv_bytes = build_csv_from_docx_json_and_quotes()
     st.download_button(
