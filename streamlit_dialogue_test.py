@@ -1204,6 +1204,44 @@ def compute_start_paragraph_index_for_review(quotes_records: list[dict], review_
     return last_seen
 
 
+def populate_record_context_fields(record: dict, context: dict, occurrence_target: int):
+    """Write context lookup outputs into a quote record using the standard schema."""
+    record["occurrence_target"] = occurrence_target
+    record["paragraph_index"] = context.get("paragraph_index") if context else record.get("paragraph_index")
+    record["context_previous_html"] = context.get("previous") if context else None
+    record["context_current_html"] = context.get("current") if context else None
+    record["context_next_html"] = context.get("next") if context else None
+    record["context_previous_text"] = BeautifulSoup(context["previous"], "html.parser").get_text() if context and context.get("previous") else None
+    record["context_current_text"] = BeautifulSoup(context["current"], "html.parser").get_text() if context and context.get("current") else None
+    record["context_next_text"] = BeautifulSoup(context["next"], "html.parser").get_text() if context and context.get("next") else None
+
+
+def autopopulate_context_for_all_records(quotes_records: list[dict]):
+    """Populate paragraph/context fields for every quote record in sequence."""
+    if not quotes_records:
+        return {"updated": 0, "with_context": 0, "without_context": 0}
+
+    with_context = 0
+    without_context = 0
+    for i, rec in enumerate(quotes_records):
+        rec = rec or {}
+        dialogue = (rec.get("quote_with_marks") or rec.get("quote_text") or "").strip()
+        occurrence_target = compute_occurrence_target_for_review(quotes_records, i)
+        start_paragraph_index = compute_start_paragraph_index_for_review(quotes_records, i)
+        context = get_context_for_dialogue_json_only(
+            dialogue,
+            occurrence_target=occurrence_target,
+            start_paragraph_index=start_paragraph_index,
+        )
+        populate_record_context_fields(rec, context, occurrence_target)
+        if context:
+            with_context += 1
+        else:
+            without_context += 1
+
+    return {"updated": len(quotes_records), "with_context": with_context, "without_context": without_context}
+
+
 def normalize_speaker_name(name):
     # Replace typographic apostrophes with straight ones, remove periods, lowercase, and trim.
     return name.replace("’", "'").replace("‘", "'").replace(".", "").lower().strip()
@@ -2805,6 +2843,14 @@ elif st.session_state.step == 2:
     ensure_quotes_records_in_session()
     st.markdown("<h4>Step 2: Review Quote Records</h4>", unsafe_allow_html=True)
     st.write("Review each unresolved quote record. Type a speaker, or use 'skip', 'exit', or 'undo'.")
+    if st.button("Auto-populate context for all quote records"):
+        summary = autopopulate_context_for_all_records(st.session_state.get("quotes_records") or [])
+        sync_quotes_lines_from_records()
+        auto_save()
+        st.success(
+            f"Context pass complete: updated {summary['updated']} records "
+            f"({summary['with_context']} with context, {summary['without_context']} without context)."
+        )
 
     review_index, review_record = get_next_record_for_review(
         st.session_state.get("quotes_records") or [],
@@ -2852,14 +2898,7 @@ elif st.session_state.step == 2:
         else:
             st.write("No context found in cached JSON for this quote.")
 
-        review_record["occurrence_target"] = occurrence_target
-        review_record["paragraph_index"] = context.get("paragraph_index") if context else review_record.get("paragraph_index")
-        review_record["context_previous_html"] = context.get("previous") if context else None
-        review_record["context_current_html"] = context.get("current") if context else None
-        review_record["context_next_html"] = context.get("next") if context else None
-        review_record["context_previous_text"] = BeautifulSoup(context["previous"], "html.parser").get_text() if context and context.get("previous") else None
-        review_record["context_current_text"] = BeautifulSoup(context["current"], "html.parser").get_text() if context and context.get("current") else None
-        review_record["context_next_text"] = BeautifulSoup(context["next"], "html.parser").get_text() if context and context.get("next") else None
+        populate_record_context_fields(review_record, context, occurrence_target)
 
         st.markdown("<hr style='margin: 2px 0;'>", unsafe_allow_html=True)
         st.write(f"**Dialogue (Line {review_record.get('index', review_index+1)}):** {dialogue}")
