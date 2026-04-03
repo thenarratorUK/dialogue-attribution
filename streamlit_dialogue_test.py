@@ -1223,19 +1223,31 @@ def autopopulate_context_for_all_records(quotes_records: list[dict]):
 
     with_context = 0
     without_context = 0
+    search_start_paragraph_index = 0
     for i, rec in enumerate(quotes_records):
         rec = rec or {}
         dialogue = (rec.get("quote_with_marks") or rec.get("quote_text") or "").strip()
         occurrence_target = compute_occurrence_target_for_review(quotes_records, i)
-        start_paragraph_index = compute_start_paragraph_index_for_review(quotes_records, i)
+        start_paragraph_index = search_start_paragraph_index
         context = get_context_for_dialogue_json_only(
             dialogue,
             occurrence_target=occurrence_target,
             start_paragraph_index=start_paragraph_index,
         )
+        # If the forward-only start index misses (e.g., one bad alignment), retry from
+        # the beginning so one failure does not cascade and null out the rest.
+        if context is None and start_paragraph_index > 0:
+            context = get_context_for_dialogue_json_only(
+                dialogue,
+                occurrence_target=occurrence_target,
+                start_paragraph_index=0,
+            )
         populate_record_context_fields(rec, context, occurrence_target)
         if context:
             with_context += 1
+            pidx = context.get("paragraph_index")
+            if isinstance(pidx, int) and pidx >= 0:
+                search_start_paragraph_index = pidx
         else:
             without_context += 1
 
